@@ -1,0 +1,10 @@
+__pycache__
+.cache
+*.pyc
+*.egg
+*.egg-info
+docs/_build
+build
+dist
+*.pypi-token.gpg
+.venv
