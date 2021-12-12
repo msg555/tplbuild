@@ -8,17 +8,16 @@ from .context import BuildContext
 
 
 class ImageDefinition(metaclass=abc.ABCMeta):
-
     @abc.abstractmethod
     def calculate_hash(self, symbolic: bool) -> str:
-        """ Calculate the hash of the image node. """
+        """Calculate the hash of the image node."""
 
     @functools.cached_property
     def full_hash(self):
         """
-`       Returns the "full hash" of this image node. This is a hash over every
-        input to the build. Specifically, this does a full hash on all
-        build context data from disk.
+        `       Returns the "full hash" of this image node. This is a hash over every
+                input to the build. Specifically, this does a full hash on all
+                build context data from disk.
         """
         return self.calcualte_hash(symbolic=False)
 
@@ -36,77 +35,90 @@ class ImageDefinition(metaclass=abc.ABCMeta):
         return self.calculate_hash(symbolic=True)
 
 
-
 @dataclass
 class RunCommandImage(ImageDefinition):
-    """ Image node ending in a RUN command. """
+    """Image node ending in a RUN command."""
+
     parent: ImageDefinition
     command: str
 
     def calculate_hash(self, symbolic: bool) -> str:
-        """ Calculate the hash of the image node. """
-        return json_hash([
-            type(self).__name__,
-            self.parent.symbolic_hash if symbolic else self.parent.full_hash,
-            self.command,
-        ])
+        """Calculate the hash of the image node."""
+        return json_hash(
+            [
+                type(self).__name__,
+                self.parent.symbolic_hash if symbolic else self.parent.full_hash,
+                self.command,
+            ]
+        )
 
 
 @dataclass
 class CopyCommandImage(ImageDefinition):
-    """ Image node ending in a COPY command """
+    """Image node ending in a COPY command"""
+
     parent: ImageDefinition
     context: ImageDefinition
     command: str
 
     def calculate_hash(self, symbolic: bool) -> str:
-        """ Calculate the hash of the image node. """
-        return json_hash([
-            type(self).__name__,
-            self.parent.symbolic_hash if symbolic else self.parent.full_hash,
-            self.context.symbolic_hash if symbolic else self.context.full_hash,
-            self.command,
-        ])
+        """Calculate the hash of the image node."""
+        return json_hash(
+            [
+                type(self).__name__,
+                self.parent.symbolic_hash if symbolic else self.parent.full_hash,
+                self.context.symbolic_hash if symbolic else self.context.full_hash,
+                self.command,
+            ]
+        )
 
 
 @dataclass
 class SourceImage(ImageDefinition):
-    """ Image node representing a source image """
+    """Image node representing a source image"""
+
     repo: str
     manifest_hash: str
 
     def calculate_hash(self, symbolic: bool) -> str:
-        """ Calculate the hash of the image node. """
-        return json_hash([
-            type(self).__name__,
-            self.manifest_hash,
-        ])
+        """Calculate the hash of the image node."""
+        return json_hash(
+            [
+                type(self).__name__,
+                self.manifest_hash,
+            ]
+        )
 
 
 @dataclass
 class BaseImage(ImageDefinition):
-    """ Image node representing a base image """
+    """Image node representing a base image"""
+
     config: str
     stage_name: str
     content_hash: str
 
     def calculate_hash(self, symbolic: bool) -> str:
-        """ Calculate the hash of the image node. """
-        return json_hash([
-            type(self).__name__,
-            self.content_hash,
-        ])
+        """Calculate the hash of the image node."""
+        return json_hash(
+            [
+                type(self).__name__,
+                self.content_hash,
+            ]
+        )
 
 
 @dataclass
 class ContextImage(ImageDefinition):
-    """ Image node representing a build context """
+    """Image node representing a build context"""
 
     context: BuildContext
 
     def calculate_hash(self, symbolic: bool) -> str:
-        """ Calculate the hash of the image node. """
-        return json_hash([
-            type(self).__name__,
-            self.context.symbolic_hash if symbolic else self.context.full_hash
-        ])
+        """Calculate the hash of the image node."""
+        return json_hash(
+            [
+                type(self).__name__,
+                self.context.symbolic_hash if symbolic else self.context.full_hash,
+            ]
+        )

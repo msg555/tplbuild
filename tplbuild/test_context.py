@@ -6,7 +6,7 @@ from .context import _create_pattern_part
 
 
 def test_create_pattern_part():
-    """ Test _create_pattern_part functionality """
+    """Test _create_pattern_part functionality"""
     no_sep = f"[^{re.escape(os.path.sep)}]"
     pass_tests = {
         "**": (".*", False),
@@ -39,7 +39,6 @@ def test_create_pattern_part():
         actual_pat, actual_simple = _create_pattern_part(path_pat)
         assert actual_pat == expected_pat
         assert actual_simple == expected_simple
-
 
     for path_pat, value_err_str in value_error_tests.items():
         try:

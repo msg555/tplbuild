@@ -23,7 +23,7 @@ def _create_pattern_part(path_pat: str) -> Tuple[str, bool]:
 
     result = []
     simple = True
-    
+
     i = 0
     while i < len(path_pat):
         ch = path_pat[i]
@@ -104,7 +104,7 @@ class ContextPattern:
     Represents a pattern used to control what files are availble in a
     build context.
     """
-        
+
     def __init__(self, pattern: str):
         if pattern.startswith("!"):
             self.ignoring = False
@@ -114,7 +114,7 @@ class ContextPattern:
             self.pattern = _compile_pattern(pattern)
 
     def match(self, path: str) -> bool:
-        """ Returns True if this pattern matches the path """
+        """Returns True if this pattern matches the path"""
         return bool(self.pattern.fullmatch(path))
 
 
@@ -122,7 +122,8 @@ class BuildContext:
     def __init__(self, base_dir: str, ignore_patterns: Iterable[str]) -> None:
         self.base_dir = base_dir
         self.context_patterns = tuple(
-            ContextPattern(pattern.strip()) for pattern in self.ignore_patterns
+            ContextPattern(pattern.strip())
+            for pattern in self.ignore_patterns
             if pattern.strip() and pattern.strip()[0] != "#"
         )
 
@@ -141,7 +142,9 @@ class BuildContext:
 
     @functools.cached_property
     def symbolic_hash(self):
-        return json_hash([
-            type(self).__name__,
-            [[pat.ignoring, pat.pattern.pattern] for pat in self.ignore_patterns],
-        ])
+        return json_hash(
+            [
+                type(self).__name__,
+                [[pat.ignoring, pat.pattern.pattern] for pat in self.ignore_patterns],
+            ]
+        )
