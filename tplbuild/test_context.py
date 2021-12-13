@@ -1,5 +1,6 @@
+import contextlib
 import io
-import os.path
+import os
 import re
 import tarfile
 import tempfile
@@ -12,6 +13,16 @@ from .context import (
     _create_pattern_part,
     BuildContext,
 )
+
+
+@contextlib.contextmanager
+def set_umask(msk):
+    """Set the umask in a context manager"""
+    prev_msk = os.umask(msk)
+    try:
+        yield
+    finally:
+        os.umask(prev_msk)
 
 
 def make_test(base_dir: str, mode: int, testdata, path: Optional[str] = None) -> None:
@@ -129,6 +140,7 @@ def test_create_pattern():
 
 
 @pytest.mark.io
+@set_umask(0)
 def test_write_context():
     """Test writing a files context and hashing"""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -150,14 +162,17 @@ def test_write_context():
                         ),
                     },
                 ),
-                "data.c": (0o531, b"nice\n"),
+                "data.c": (0o731, b"nice\n"),
             },
         )
 
         ctx = BuildContext(tmpdir, 0o022, [])
+        with open("out.tar", "wb") as fout:
+            ctx.write_context(fout)
+
         assert (
             ctx.full_hash
-            == "40141be71014e0ab273a8f366dfe0bc53a4382b4e8be7d1f727e70080fc40994"
+            == "595b212d34c969979978e87128f79f645088057007894a5457e89b5455ecd64a"
         )
         assert len(ctx.symbolic_hash) == 64
 
@@ -180,7 +195,7 @@ def test_write_context():
             ti = tf.getmember("./data.c")
             assert ti.isreg()
             assert ti.uid == 0 and ti.gid == 0
-            assert ti.mode == 0o555
+            assert ti.mode == 0o755
             with tf.extractfile(ti) as tfile:
                 assert tfile.read() == b"nice\n"
 
@@ -194,7 +209,7 @@ def test_write_context():
         ctx = BuildContext(tmpdir, None, [])
         assert (
             ctx.full_hash
-            == "cdb380dc119c0df673ba38778a4f63ae6e1970c7d7bd03d51936527c468b2308"
+            == "eefa5a6389c48985a4cd4a4eeb7b59d653ac29502e87d9525c9d6a533498c76c"
         )
         assert len(ctx.symbolic_hash) == 64
 
@@ -217,7 +232,7 @@ def test_write_context():
             ti = tf.getmember("./data.c")
             assert ti.isreg()
             assert ti.uid == 0 and ti.gid == 0
-            assert ti.mode == 0o531
+            assert ti.mode == 0o731
             with tf.extractfile(ti) as tfile:
                 assert tfile.read() == b"nice\n"
 
@@ -231,7 +246,7 @@ def test_write_context():
         ctx = BuildContext(tmpdir, 0o022, ["**/*.c", "!subdir/baz.c/deepfile"])
         assert (
             ctx.full_hash
-            == "2c1a7e2dc09181f05ab5e5dd522e5e3bb3cf930179f00904f42cab7ddda5b6af"
+            == "558ca8796a779d4b71742e7a53e8bd03891765c75328bf1b47ebda77666458f3"
         )
         assert len(ctx.symbolic_hash) == 64
 

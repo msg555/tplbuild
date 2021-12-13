@@ -2,10 +2,38 @@ import functools
 import io
 import os.path
 import re
+import sys
 import tarfile
 from typing import Iterable, Optional, Tuple
 
 from . import hashing
+
+
+if sys.version_info < (3, 9):
+
+    class _PatchedTarInfo(tarfile.TarInfo):
+        """
+        Patched tarinfo class for python < 3.9
+        """
+
+        # pylint: disable=redefined-builtin,consider-using-f-string
+        def _create_header(self, info, format, encoding, errors):
+            """
+            Patch create_header to correctly zero out dev numbers for non-devices.
+            """
+            buf = super()._create_header(info, format, encoding, errors)
+            assert len(buf) == 512
+
+            if info.get("type") in (tarfile.CHRTYPE, tarfile.BLKTYPE):
+                return buf
+
+            buf = buf[:329] + b"\x00" * 16 + buf[345:]
+            chksum = tarfile.calc_chksums(buf)[0]
+            buf = buf[:148] + bytes("%06o\0" % chksum, "ascii") + buf[155:]
+            return buf
+
+else:
+    _PatchedTarInfo = tarfile.TarInfo
 
 
 def _create_pattern_part(path_pat: str) -> Tuple[str, bool]:
@@ -203,7 +231,12 @@ class BuildContext:
             compress: If set the output stream will be gzipped.
         """
 
-        with tarfile.open(fileobj=io_out, mode=("w|gz" if compress else "w|")) as tf:
+        with tarfile.open(
+            fileobj=io_out,
+            format=tarfile.PAX_FORMAT,
+            tarinfo=_PatchedTarInfo,
+            mode=("w|gz" if compress else "w|"),
+        ) as tf:
 
             def filter_tarinfo(ti: tarfile.TarInfo) -> tarfile.TarInfo:
                 """
@@ -221,6 +254,12 @@ class BuildContext:
                     ti.mode &= ~0o777
                     ti.mode |= ((umode << 6) | (umode << 3) | umode) & ~self.umask
 
+                if not ti.isreg() and not ti.islnk():
+                    ti.size = 0
+
+                ti.devmajor = 0
+                ti.devminor = 0
+
                 return ti
 
             for root, dir_names, file_names in os.walk(self.base_dir):
@@ -229,6 +268,7 @@ class BuildContext:
                     arch_root = "/"
                 else:
                     arch_root = "/" + arch_root
+
                 tf.add(
                     root,
                     arcname="." + arch_root,
