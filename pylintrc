@@ -23,6 +23,7 @@ load-plugins=
     pylint.extensions.overlapping_exceptions,
     pylint.extensions.typing,
     pylint.extensions.redefined_variable_type,
+    pylint_pydantic
 
 # Use multiple processes to speed up Pylint.
 jobs=1
@@ -35,6 +36,7 @@ unsafe-load-any-extension=no
 # be loaded. Extensions are loading into the active Python interpreter and may
 # run arbitrary code
 extension-pkg-allow-list=
+    pydantic,
 
 
 [MESSAGES CONTROL]

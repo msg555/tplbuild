@@ -167,9 +167,6 @@ def test_write_context():
         )
 
         ctx = BuildContext(tmpdir, 0o022, [])
-        with open("out.tar", "wb") as fout:
-            ctx.write_context(fout)
-
         assert (
             ctx.full_hash
             == "595b212d34c969979978e87128f79f645088057007894a5457e89b5455ecd64a"

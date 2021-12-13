@@ -31,7 +31,7 @@ platforms to build against. These fields are all optional and building without a
 tplbuild.yml file at all can be done if just getting started.
 
 ```yaml
-version: 1.0
+version: "1.0"
 
 # Define how base images are named and where they are pushed. This is required
 # if using base images in your build file.
