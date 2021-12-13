@@ -1,6 +1,7 @@
-import pytest
+import io
 import os.path
 import re
+import tarfile
 import tempfile
 from typing import Optional
 
@@ -37,7 +38,7 @@ def make_test(base_dir: str, mode: int, testdata, path: Optional[str] = None) ->
 
         path = path or base_dir
         for subfile, subfile_data in testdata.items():
-            make_test(base_dir, *subfile_data, path=os.path.join(path, subfile))
+            make_test(base_dir, *subfile_data, path=os.path.join(path, subfile))  # type: ignore
     else:
         assert path is not None
         assert isinstance(testdata, bytes)
@@ -129,6 +130,7 @@ def test_create_pattern():
 
 @pytest.mark.io
 def test_write_context():
+    """Test writing a files context and hashing"""
     with tempfile.TemporaryDirectory() as tmpdir:
         make_test(
             tmpdir,
@@ -140,17 +142,121 @@ def test_write_context():
                         "bar.txt": (0o600, b"wow\n"),
                         "bar.c": (0o600, b"stuff\n"),
                         "baz.c": (
-                            0o755,
+                            0o751,
                             {
                                 "deepfile": (0o752, b"deepdata\n"),
+                                "oth": (0o752, b"othdata\n"),
                             },
                         ),
                     },
                 ),
-                "data.c": (0o537, b"nice\n"),
+                "data.c": (0o531, b"nice\n"),
             },
         )
 
         ctx = BuildContext(tmpdir, 0o022, [])
-        with open("out.tar", "wb") as fout:
-            ctx.write_context(fout, compress=True)
+        assert (
+            ctx.full_hash
+            == "40141be71014e0ab273a8f366dfe0bc53a4382b4e8be7d1f727e70080fc40994"
+        )
+        assert len(ctx.symbolic_hash) == 64
+
+        iob = io.BytesIO()
+        ctx.write_context(iob)
+        iob.seek(0)
+        with tarfile.open(fileobj=iob) as tf:
+            assert tf.getnames() == [
+                ".",
+                "./data.c",
+                "./subdir",
+                "./subdir/bar.c",
+                "./subdir/bar.txt",
+                "./subdir/baz.c",
+                "./subdir/baz.c/deepfile",
+                "./subdir/baz.c/oth",
+            ]
+
+            # Check that file exists and had its metadata updated appropriately
+            ti = tf.getmember("./data.c")
+            assert ti.isreg()
+            assert ti.uid == 0 and ti.gid == 0
+            assert ti.mode == 0o555
+            with tf.extractfile(ti) as tfile:
+                assert tfile.read() == b"nice\n"
+
+            # Check the same for a directory
+            ti = tf.getmember("./subdir/baz.c")
+            assert ti.isdir()
+            assert ti.uid == 0 and ti.gid == 0
+            assert ti.mode == 0o755
+
+        # Try again with None as the umask
+        ctx = BuildContext(tmpdir, None, [])
+        assert (
+            ctx.full_hash
+            == "cdb380dc119c0df673ba38778a4f63ae6e1970c7d7bd03d51936527c468b2308"
+        )
+        assert len(ctx.symbolic_hash) == 64
+
+        iob = io.BytesIO()
+        ctx.write_context(iob)
+        iob.seek(0)
+        with tarfile.open(fileobj=iob) as tf:
+            assert tf.getnames() == [
+                ".",
+                "./data.c",
+                "./subdir",
+                "./subdir/bar.c",
+                "./subdir/bar.txt",
+                "./subdir/baz.c",
+                "./subdir/baz.c/deepfile",
+                "./subdir/baz.c/oth",
+            ]
+
+            # Check that file exists and had its metadata updated appropriately
+            ti = tf.getmember("./data.c")
+            assert ti.isreg()
+            assert ti.uid == 0 and ti.gid == 0
+            assert ti.mode == 0o531
+            with tf.extractfile(ti) as tfile:
+                assert tfile.read() == b"nice\n"
+
+            # Check the same for a directory
+            ti = tf.getmember("./subdir/baz.c")
+            assert ti.isdir()
+            assert ti.uid == 0 and ti.gid == 0
+            assert ti.mode == 0o751
+
+        # Try one more time with ignore patterns
+        ctx = BuildContext(tmpdir, 0o022, ["**/*.c", "!subdir/baz.c/deepfile"])
+        assert (
+            ctx.full_hash
+            == "2c1a7e2dc09181f05ab5e5dd522e5e3bb3cf930179f00904f42cab7ddda5b6af"
+        )
+        assert len(ctx.symbolic_hash) == 64
+
+        iob = io.BytesIO()
+        ctx.write_context(iob)
+        iob.seek(0)
+        with tarfile.open(fileobj=iob) as tf:
+            assert tf.getnames() == [
+                ".",
+                "./subdir",
+                "./subdir/bar.txt",
+                "./subdir/baz.c",
+                "./subdir/baz.c/deepfile",
+            ]
+
+            # Check that file exists and had its metadata updated appropriately
+            ti = tf.getmember("./subdir/bar.txt")
+            assert ti.isreg()
+            assert ti.uid == 0 and ti.gid == 0
+            assert ti.mode == 0o644
+            with tf.extractfile(ti) as tfile:
+                assert tfile.read() == b"wow\n"
+
+            # Check the same for a directory
+            ti = tf.getmember("./subdir/baz.c")
+            assert ti.isdir()
+            assert ti.uid == 0 and ti.gid == 0
+            assert ti.mode == 0o755

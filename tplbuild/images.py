@@ -1,13 +1,17 @@
 import abc
 from dataclasses import dataclass
 import functools
-from typing import List
 
 from .hashing import json_hash
 from .context import BuildContext
 
 
 class ImageDefinition(metaclass=abc.ABCMeta):
+    """
+    Base class for all image deinitions. These abstractly represent a build
+    graph.
+    """
+
     @abc.abstractmethod
     def calculate_hash(self, symbolic: bool) -> str:
         """Calculate the hash of the image node."""
@@ -19,7 +23,7 @@ class ImageDefinition(metaclass=abc.ABCMeta):
                 input to the build. Specifically, this does a full hash on all
                 build context data from disk.
         """
-        return self.calcualte_hash(symbolic=False)
+        return self.calculate_hash(symbolic=False)
 
     @functools.cached_property
     def symbolic_hash(self):

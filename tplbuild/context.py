@@ -5,6 +5,8 @@ import re
 import tarfile
 from typing import Iterable, Optional, Tuple
 
+from . import hashing
+
 
 def _create_pattern_part(path_pat: str) -> Tuple[str, bool]:
     """
@@ -120,7 +122,7 @@ def _create_pattern(path_pat: str, match_prefix: bool) -> str:
     result = ["^"]
     for pat_part, _ in pattern_parts:
         result.append(pat_part)
-        result.append(f"(?:$|")
+        result.append("(?:$|")
     result.append(re.escape(os.path.sep))
 
     result.append(")" * len(pattern_parts))
@@ -145,7 +147,7 @@ class ContextPattern:
             self.ignoring = True
             self.pattern = re.compile(_create_pattern(pattern, False))
 
-    def match(self, path: str) -> bool:
+    def matches(self, path: str) -> bool:
         """Returns True if this pattern matches the path"""
         return bool(self.pattern.search(path))
 
@@ -203,7 +205,7 @@ class BuildContext:
 
         with tarfile.open(fileobj=io_out, mode=("w|gz" if compress else "w|")) as tf:
 
-            def filter_tarinfo(ti: tarfile.TarInfo) -> None:
+            def filter_tarinfo(ti: tarfile.TarInfo) -> tarfile.TarInfo:
                 """
                 Filter out metadata that should not be included in the build
                 context or its hash.
@@ -216,7 +218,8 @@ class BuildContext:
 
                 if self.umask is not None:
                     umode = (ti.mode >> 6) & 0o7
-                    ti.mode = ((umode << 6) | (umode << 3) | umode) & ~self.umask
+                    ti.mode &= ~0o777
+                    ti.mode |= ((umode << 6) | (umode << 3) | umode) & ~self.umask
 
                 return ti
 
@@ -254,14 +257,16 @@ class BuildContext:
 
     @functools.cached_property
     def full_hash(self) -> str:
-        """ The full content hash of the build context, as a hex digest """
+        """The full content hash of the build context, as a hex digest"""
         hsh = hashing.HASHER()
-        self.write_context(HashWriter(hsh))
-        return json_hash([
-            type(self).__name__,
-            "full",
-            hsh.hexdigest(),
-        ])
+        self.write_context(hashing.HashWriter(hsh))  # type: ignore
+        return hashing.json_hash(
+            [
+                type(self).__name__,
+                "full",
+                hsh.hexdigest(),
+            ]
+        )
 
     @functools.cached_property
     def symbolic_hash(self) -> str:
@@ -271,12 +276,12 @@ class BuildContext:
         from the build context and is only a hash of the parameters that define
         the build context instead.
         """
-        return json_hash(
+        return hashing.json_hash(
             [
                 type(self).__name__,
                 "symbolic",
                 self.umask,
                 self.base_dir,
-                [[pat.ignoring, pat.pattern.pattern] for pat in self.ignore_patterns],
+                [[pat.ignoring, pat.pattern.pattern] for pat in self.context_patterns],
             ]
         )
