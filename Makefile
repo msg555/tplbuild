@@ -18,7 +18,7 @@ typecheck:
 lint: format-check pylint typecheck
 
 test:
-	$(PYTHON) -m unittest discover -v tests/
+	$(PYTHON) -m pytest -sv tplbuild
 
 docs:
 	make -C docs html

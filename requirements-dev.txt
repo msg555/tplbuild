@@ -1,4 +1,5 @@
 black==21.12b0
+build~=0.7
 mypy~=0.910
 pylint~=2.12
 pytest~=6.2
