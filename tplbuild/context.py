@@ -7,6 +7,7 @@ import tarfile
 from typing import Iterable, Optional, Tuple
 
 from . import hashing
+from .exceptions import TplBuildContextException
 
 
 if sys.version_info < (3, 9):
@@ -168,12 +169,17 @@ class ContextPattern:
     """
 
     def __init__(self, pattern: str):
-        if pattern.startswith("!"):
-            self.ignoring = False
-            self.pattern = re.compile(_create_pattern(pattern[1:], True))
-        else:
-            self.ignoring = True
-            self.pattern = re.compile(_create_pattern(pattern, False))
+        try:
+            if pattern.startswith("!"):
+                self.ignoring = False
+                self.pattern = re.compile(_create_pattern(pattern[1:], True))
+            else:
+                self.ignoring = True
+                self.pattern = re.compile(_create_pattern(pattern, False))
+        except ValueError as exc:
+            raise TplBuildContextException(
+                f"Error handling {repr(pattern)}: {exc}"
+            ) from exc
 
     def matches(self, path: str) -> bool:
         """Returns True if this pattern matches the path"""
