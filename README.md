@@ -93,7 +93,7 @@ contexts:
 
 ```
 # Define base image stage
-{{ begin_stage("myimage-base", from=("python", "3.8"), context="base") }}
+{{ begin_stage("myimage-base", from=("python", "3.8"), context="base", base=True) }}
   
 WORKDIR /work
 COPY requirements.txt ./
