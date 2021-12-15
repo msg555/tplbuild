@@ -70,7 +70,12 @@ class TplBuild:
         self.config = TplConfig(**config)
         self.renderer = BuildRenderer(self.base_dir, self.config)
 
-    def _get_config_data(self, config_name: Optional[str] = None) -> Dict[str, Any]:
+    def _get_config_data(
+        self,
+        config_name: Optional[str] = None,
+        *,
+        platform: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Returns the config data associated with the passed config name.
         """
@@ -82,20 +87,33 @@ class TplBuild:
         if config_name is None:
             # If no config was requested nor are any configured use an emtpy
             # configuration dictionary.
-            return {}
+            config_data = {}
+        else:
+            try:
+                config_data = self.config.configs[config_name]
+            except KeyError as exc:
+                raise TplBuildException(
+                    f"Config {repr(config_name)} does not exist"
+                ) from exc
 
-        try:
-            return self.config.configs[config_name]
-        except KeyError as exc:
-            raise TplBuildException(
-                f"Config {repr(config_name)} does not exist"
-            ) from exc
+        return {
+            "config": config_data,
+            "config_name": config_name,
+            "platform": platform,
+        }
 
-    def render(self, config_name: Optional[str] = None) -> Dict[str, StageData]:
+    def render(
+        self,
+        config_name: Optional[str] = None,
+        *,
+        platform: Optional[str] = None,
+    ) -> Dict[str, StageData]:
         """
         Render all contexts and stages into StageData.
         """
-        return self.renderer.render(self._get_config_data(config_name))
+        return self.renderer.render(
+            self._get_config_data(config_name, platform=platform)
+        )
 
     def plan(self, stage_names: Iterable[StageData]) -> List[BuildOperation]:
         """

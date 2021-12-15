@@ -1,18 +1,25 @@
-{{ begin_stage("tplbuild-base", from=("python", "3.10"), context="base", base=True) }}
+{{ begin_stage("tplbuild-base", parent=("python", "3.10"), context="base", base=True) }}
 
 WORKDIR /tplbuild
 
 COPY . ./
 
 # TODO: use setuptools instead of requirements files
-{% if env == "dev" %}
+{% if config.env == "dev" %}
   RUN pip install -r requirements.txt -r requirements-dev.txt
 {% else %}
-  RUN pip install -r requirements.txt -r requirements-dev.txt
+  RUN pip install -r requirements.txt
 {% endif %}
 
 
-{{ begin_stage("tplbuild", from="tplbuild-base") }}
+{{ begin_stage("tplbuild", parent="tplbuild-base") }}
+
+
+PUSHCONTEXT wowzers
+PUSHCONTEXT "nice\nstuff"
+POPCONTEXT
+PUSHCONTEXT ["ubuntu", "18.04"]
+POPCONTEXT
 
 COPY . ./
 

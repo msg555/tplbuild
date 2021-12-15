@@ -23,4 +23,4 @@ contexts:
     ignore: |
       *
       !requirements.txt
-      {% if env == "dev" %}!requirements-dev.txt{% endif %}
+      {% if config.env == "dev" %}!requirements-dev.txt{% endif %}
