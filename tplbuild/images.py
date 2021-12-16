@@ -40,11 +40,12 @@ class ImageDefinition(metaclass=abc.ABCMeta):
 
 
 @dataclass
-class RunCommandImage(ImageDefinition):
-    """Image node ending in a RUN command."""
+class CommandImage(ImageDefinition):
+    """Image node ending in a command other than COPY."""
 
     parent: ImageDefinition
     command: str
+    args: str
 
     def calculate_hash(self, symbolic: bool) -> str:
         """Calculate the hash of the image node."""
@@ -53,6 +54,7 @@ class RunCommandImage(ImageDefinition):
                 type(self).__name__,
                 self.parent.symbolic_hash if symbolic else self.parent.full_hash,
                 self.command,
+                self.args,
             ]
         )
 
