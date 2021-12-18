@@ -1,4 +1,5 @@
 import dataclasses
+import functools
 import json
 import os
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
@@ -15,49 +16,24 @@ from .exceptions import (
     TplBuildTemplateException,
 )
 from .images import (
+    BaseImage,
+    CommandImage,
     ContextImage,
     CopyCommandImage,
     ImageDefinition,
-    CommandImage,
+    SourceImage,
+)
+from .util import (
+    json_encode,
+    json_decode,
+    json_raw_decode,
+    line_reader,
+    visit_graph,
 )
 
 RESERVED_STAGE_NAMES = {"scratch"}
 
 ImageDescriptor = Union[str, Tuple[str, str]]
-
-
-def _json_encode(data: Any) -> str:
-    """Helper function to encode JSON data"""
-    return json.dumps(data)
-
-
-def _json_decode(data: str) -> Any:
-    """Helper function to decode JSON data"""
-    return json.loads(data)
-
-
-def _line_reader(document: str) -> Iterable[Tuple[int, str]]:
-    """
-    Yield lines from `document`. Lines will have leading and trailing whitespace
-    stripped. Lines that being with a '#' character will be omitted. Lines that
-    end with a single backslash character will be treated as continuations with
-    the following line concatenated onto itself, not including the backslash or
-    line feed character.
-    """
-    line_parts = []
-    lines = document.splitlines()
-    for idx, line_part in enumerate(lines):
-        line_part = line_part.rstrip()
-        if line_part.endswith("\\") and not line_part.endswith("\\\\"):
-            line_parts.append(line_part[:-1])
-            if idx + 1 < len(lines):
-                continue
-            line_part = ""
-
-        line = ("".join(line_parts) + line_part).strip()
-        line_parts.clear()
-        if line and line[0] != "#":
-            yield idx, line
 
 
 @dataclasses.dataclass
@@ -76,6 +52,22 @@ class StageData:
     push_tags: Tuple[str, ...] = ()
     #: True if this is a base image
     base: bool = False
+
+
+@dataclasses.dataclass(eq=False)
+class _LateImageReference(ImageDefinition):
+    """
+    Represents a symbolic reference to another image. These should be
+    resolved to other ImageDefinition objects before render returns
+    any image graph data.
+    """
+
+    image_desc: ImageDescriptor
+
+    def calculate_hash(self, symbolic: bool) -> str:
+        raise NotImplementedError(
+            "LateImageReference should be removed before attempting to hash"
+        )
 
 
 class BuildRenderer:
@@ -138,6 +130,51 @@ class BuildRenderer:
             )
         )
 
+    def _resolve_late_references(self, stages: Dict[str, StageData]) -> None:
+        """
+        Update all the images in `stages` to remove any _LateImageReference
+        objects and replace them with the proper image.
+        """
+
+        def _visit(follow_base: bool, image: ImageDefinition) -> ImageDefinition:
+            """
+            If visiting a late image reference replace it with the proper
+            stage image or source image.
+            """
+            if not isinstance(image, _LateImageReference):
+                return image
+
+            desc = image.image_desc
+            if isinstance(desc, str):
+                stage = stages.get(desc)
+                if stage is None:
+                    raise TplBuildException(
+                        f"Cannot resolve image reference to {repr(desc)}"
+                    )
+
+                if stage.base and not follow_base:
+                    return BaseImage(
+                        config="TODO",
+                        stage_name=desc,
+                        content_hash="TODO",
+                    )
+
+                return stage.image
+
+            if isinstance(desc, list) and len(desc) == 2:
+                return SourceImage(
+                    repo=desc[0],
+                    tag=desc[1],
+                )
+
+            raise TplBuildException(f"Malformed image desc {repr(desc)}")
+
+        for stage_data in stages.values():
+            stage_data.image = visit_graph(
+                stage_data.image,
+                functools.partial(_visit, stage_data.base),
+            )
+
     def render(self, config_data: Dict[str, Any]) -> Dict[str, StageData]:
         """
         Renders all build contexts and stages into its graph representation.
@@ -177,29 +214,14 @@ class BuildRenderer:
             }
             metadata = {key: val for key, val in metadata.items() if val}
             return (
-                f"TPLFROM {_json_encode({'parent': parent, 'name': stage_name})}\n"
-                f"METADATA { _json_encode(metadata) }\n"
+                f"TPLFROM {json_encode({'parent': parent, 'name': stage_name})}\n"
+                f"METADATA {json_encode(metadata)}\n"
             )
 
         dockerfile_data = self.jinja_env.get_template("Dockerfile.tplbuild").render(
             begin_stage=_begin_stage,
             **config_data,
         )
-
-        @dataclasses.dataclass
-        class LateImageReference(ImageDefinition):
-            """
-            Represents a symbolic reference to another image. These should be
-            resolved to other ImageDefinition objects before render returns
-            any image graph data.
-            """
-
-            image_desc: ImageDescriptor
-
-            def calculate_hash(self, symbolic: bool) -> str:
-                raise NotImplementedError(
-                    "LateImageReference should be removed before attempting to hash"
-                )
 
         @dataclasses.dataclass
         class ActiveImage:
@@ -215,7 +237,7 @@ class BuildRenderer:
 
         image_stack = []
         image_metadata: Dict[str, Dict[str, Any]] = {}
-        for line_num, line in _line_reader(dockerfile_data):
+        for line_num, line in line_reader(dockerfile_data):
             line_parts = line.split(maxsplit=1)
             cmd = line_parts[0].upper()
             line = line_parts[1] if len(line_parts) > 1 else ""
@@ -232,13 +254,13 @@ class BuildRenderer:
                     )
                 image_stack.append(
                     ActiveImage(
-                        image=LateImageReference(line_parts[0]),
+                        image=_LateImageReference(line_parts[0]),
                         name=line_parts[2],
                     )
                 )
             elif cmd == "TPLFROM":
                 try:
-                    from_image_desc = _json_decode(line)
+                    from_image_desc = json_decode(line)
                 except json.JSONDecodeError as exc:
                     raise TplBuildException(
                         f"{line_num}: Failed to parse TPLFROM data"
@@ -246,7 +268,7 @@ class BuildRenderer:
 
                 image_stack.append(
                     ActiveImage(
-                        image=LateImageReference(from_image_desc["parent"]),
+                        image=_LateImageReference(from_image_desc["parent"]),
                         name=from_image_desc["name"],
                     )
                 )
@@ -291,24 +313,25 @@ class BuildRenderer:
                     line = line[7:]
                     if line[0] in '"[':
                         try:
-                            ctx_name, pos = json.JSONDecoder().raw_decode(line)
-                            line = line[pos:].lstrip()
+                            ctx_name, pos = json_raw_decode(line)
                         except json.JSONDecodeError as exc:
                             raise TplBuildException(
                                 f"{line_num}: Failed to parse COPY --from argument"
                             ) from exc
+                        line = line[pos:].lstrip()
                     else:
                         line_parts = line.split(maxsplit=1)
                         ctx_name = line_parts[0]
                         line = line_parts[1] if len(line_parts) > 1 else ""
 
-                    ctx = LateImageReference(ctx_name)
+                    ctx = _LateImageReference(ctx_name)
 
                 if ctx is None:
                     raise TplBuildException(
                         f"{line_num}: Cannot COPY from null context"
                     )
 
+                assert not isinstance(ctx, str)
                 image_stack[-1].image = CopyCommandImage(
                     parent=image_stack[-1].image,
                     context=ctx,
@@ -320,14 +343,16 @@ class BuildRenderer:
                         f"{line_num}: Expected image start, not {cmd}"
                     )
                 try:
-                    metadata = _json_decode(line)
+                    metadata = json_decode(line)
                 except json.JSONDecodeError as exc:
                     raise TplBuildException(
                         f"{line_num}: Failed to parse METADATA data"
                     ) from exc
                 image_metadata[image_stack[-1].name] = metadata
                 if "context" in metadata:
-                    image_stack[-1].contexts = [metadata["context"]]
+                    image_stack[-1].contexts = [
+                        _LateImageReference(metadata["context"])
+                    ]
             elif cmd == "PUSHCONTEXT":
                 if not image_stack:
                     raise TplBuildException(
@@ -336,12 +361,12 @@ class BuildRenderer:
                 push_context = line
                 if line and line[0] in '"[':
                     try:
-                        push_context = _json_decode(line)
+                        push_context = json_decode(line)
                     except json.JSONDecodeError as exc:
                         raise TplBuildException(
                             f"{line_num}: Failed to parse PUSHCONTEXT data"
                         ) from exc
-                image_stack[-1].contexts.append(LateImageReference(push_context))
+                image_stack[-1].contexts.append(_LateImageReference(push_context))
             elif cmd == "POPCONTEXT":
                 if not image_stack:
                     raise TplBuildException(
@@ -371,5 +396,7 @@ class BuildRenderer:
 
         # TODO(msg): Make this a bit cleaner
         # TODO(msg): Resolve LateImageReferences
+
+        self._resolve_late_references(result)
 
         return result

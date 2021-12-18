@@ -1,6 +1,7 @@
 import abc
 from dataclasses import dataclass
 import functools
+from typing import Iterable, List
 
 from .hashing import json_hash
 from .context import BuildContext
@@ -19,9 +20,9 @@ class ImageDefinition(metaclass=abc.ABCMeta):
     @functools.cached_property
     def full_hash(self):
         """
-        `       Returns the "full hash" of this image node. This is a hash over every
-                input to the build. Specifically, this does a full hash on all
-                build context data from disk.
+        Returns the "full hash" of this image node. This is a hash over every
+        input to the build. Specifically, this does a full hash on all
+        build context data from disk.
         """
         return self.calculate_hash(symbolic=False)
 
@@ -38,8 +39,22 @@ class ImageDefinition(metaclass=abc.ABCMeta):
         """
         return self.calculate_hash(symbolic=True)
 
+    def get_dependencies(self) -> List["ImageDefinition"]:
+        """
+        Returns a list of image dependencies for this image node. The first
+        dependant is considered the "primary" dependant.
+        """
+        return []
 
-@dataclass
+    def set_dependencies(self, deps: Iterable["ImageDefinition"]) -> None:
+        """
+        Sets the dependencies for this image. This must be the correct size
+        for the image type.
+        """
+        assert not tuple(deps)
+
+
+@dataclass(eq=False)
 class CommandImage(ImageDefinition):
     """Image node ending in a command other than COPY."""
 
@@ -58,8 +73,14 @@ class CommandImage(ImageDefinition):
             ]
         )
 
+    def get_dependencies(self) -> List[ImageDefinition]:
+        return [self.parent]
 
-@dataclass
+    def set_dependencies(self, deps: Iterable[ImageDefinition]) -> None:
+        (self.parent,) = deps
+
+
+@dataclass(eq=False)
 class CopyCommandImage(ImageDefinition):
     """Image node ending in a COPY command"""
 
@@ -78,25 +99,31 @@ class CopyCommandImage(ImageDefinition):
             ]
         )
 
+    def get_dependencies(self) -> List[ImageDefinition]:
+        return [self.parent, self.context]
 
-@dataclass
+    def set_dependencies(self, deps: Iterable[ImageDefinition]) -> None:
+        self.parent, self.context = deps
+
+
+@dataclass(eq=False)
 class SourceImage(ImageDefinition):
     """Image node representing a source image"""
 
     repo: str
-    manifest_hash: str
+    tag: str
 
     def calculate_hash(self, symbolic: bool) -> str:
         """Calculate the hash of the image node."""
         return json_hash(
             [
                 type(self).__name__,
-                self.manifest_hash,
+                self.tag,
             ]
         )
 
 
-@dataclass
+@dataclass(eq=False)
 class BaseImage(ImageDefinition):
     """Image node representing a base image"""
 
@@ -114,7 +141,7 @@ class BaseImage(ImageDefinition):
         )
 
 
-@dataclass
+@dataclass(eq=False)
 class ContextImage(ImageDefinition):
     """Image node representing a build context"""
 

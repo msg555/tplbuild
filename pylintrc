@@ -78,6 +78,7 @@ disable=
     format,
     missing-module-docstring,
     fixme,
+    no-self-use,
 
 
 [REPORTS]
