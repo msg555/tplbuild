@@ -1,5 +1,4 @@
 import dataclasses
-import functools
 import json
 import os
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
@@ -23,7 +22,7 @@ from .images import (
     ImageDefinition,
     SourceImage,
 )
-from .util import (
+from .utils import (
     json_encode,
     json_decode,
     json_raw_decode,
@@ -136,7 +135,7 @@ class BuildRenderer:
         objects and replace them with the proper image.
         """
 
-        def _visit(follow_base: bool, image: ImageDefinition) -> ImageDefinition:
+        def _visit(image: ImageDefinition) -> ImageDefinition:
             """
             If visiting a late image reference replace it with the proper
             stage image or source image.
@@ -152,7 +151,7 @@ class BuildRenderer:
                         f"Cannot resolve image reference to {repr(desc)}"
                     )
 
-                if stage.base and not follow_base:
+                if stage.base:
                     return BaseImage(
                         config="TODO",
                         stage_name=desc,
@@ -169,11 +168,12 @@ class BuildRenderer:
 
             raise TplBuildException(f"Malformed image desc {repr(desc)}")
 
-        for stage_data in stages.values():
-            stage_data.image = visit_graph(
-                stage_data.image,
-                functools.partial(_visit, stage_data.base),
-            )
+        stage_images = visit_graph(
+            (stage_data.image for stage_data in stages.values()),
+            _visit,
+        )
+        for stage_data, stage_image in zip(stages.values(), stage_images):
+            stage_data.image = stage_image
 
     def render(self, config_data: Dict[str, Any]) -> Dict[str, StageData]:
         """

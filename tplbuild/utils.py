@@ -22,14 +22,18 @@ def json_raw_decode(data: str) -> Tuple[Any, int]:
     return json.JSONDecoder().raw_decode(data)
 
 
-def visit_graph(root: ImageDefinition, visit_func: VisitFunc) -> ImageDefinition:
+def visit_graph(
+    roots: Iterable[ImageDefinition], visit_func: VisitFunc
+) -> List[ImageDefinition]:
     """
-    Traverses the image graph rooted at `root` calling `visit_func` with
+    Traverses the image graph from the passed `roots` calling `visit_func` with
     each image. The graph is traveresed in pre-order allowing `visit_func` to
     change a node before it is traversed.
 
     visit_graph will raise TplBuildException if a cycle is detected in the graph.
     It will also automatically skip images taht have been visited already.
+    visit_graph will return a list of the update image roots in the same order
+    they were passed to visit_graph.
 
     `visit_func` can return a new image object (or modify and return the passed
     image object) to modify the graph. Alternatively, `visit_func` may raise a
@@ -37,20 +41,20 @@ def visit_graph(root: ImageDefinition, visit_func: VisitFunc) -> ImageDefinition
     rooted at the current image.
     """
 
-    stack: List[Tuple[ImageDefinition, Optional[List[ImageDefinition]], int]] = [
-        (root, None, 0)
-    ]
+    roots_list = list(roots)
+    stack: List[
+        Tuple[Optional[ImageDefinition], Optional[List[ImageDefinition]], int]
+    ] = [(None, roots_list, 0)]
     on_stack = set()
     remapped = {}
     while True:
         image, image_deps, dep_idx = stack[-1]
         if image_deps is None:
+            assert image is not None
             try:
                 new_image = visit_func(image)
             except StopIteration:
                 stack.pop()
-                if not stack:
-                    return image
                 continue
 
             # Store the remapping
@@ -68,7 +72,7 @@ def visit_graph(root: ImageDefinition, visit_func: VisitFunc) -> ImageDefinition
         while dep_image is None and dep_idx < len(image_deps):
             dep_image = image_deps[dep_idx]
             if dep_image in on_stack:
-                raise TplBuildException("Cycle detected in build graph")
+                raise TplBuildException("Cycle detected in graph")
 
             # Check if we've visited this image before and apply its remapping.
             remapped_image = remapped.get(dep_image)
@@ -80,14 +84,15 @@ def visit_graph(root: ImageDefinition, visit_func: VisitFunc) -> ImageDefinition
 
         stack[-1] = (image, image_deps, dep_idx)
         if dep_image is None:
+            if len(stack) == 1:
+                return roots_list
+
+            assert image is not None
             image.set_dependencies(image_deps)
             on_stack.remove(image)
             stack.pop()
         else:
             stack.append((dep_image, None, 0))
-
-        if not stack:
-            return image
 
 
 def line_reader(document: str) -> Iterable[Tuple[int, str]]:
@@ -98,10 +103,12 @@ def line_reader(document: str) -> Iterable[Tuple[int, str]]:
     the following line concatenated onto itself, not including the backslash or
     line feed character.
     """
-    line_parts = []
+    line_parts: List[str] = []
     lines = document.splitlines()
     for idx, line_part in enumerate(lines):
         line_part = line_part.rstrip()
+        if not line_parts and line_part.lstrip().startswith("#"):
+            continue
         if line_part.endswith("\\") and not line_part.endswith("\\\\"):
             line_parts.append(line_part[:-1])
             if idx + 1 < len(lines):
@@ -110,5 +117,5 @@ def line_reader(document: str) -> Iterable[Tuple[int, str]]:
 
         line = ("".join(line_parts) + line_part).strip()
         line_parts.clear()
-        if line and line[0] != "#":
+        if line:
             yield idx, line
