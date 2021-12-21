@@ -1,5 +1,5 @@
 from typing import Iterable, List
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -141,6 +141,41 @@ def test_visit_graph():
     for image in nodes[4:]:
         assert nodes[3] not in image.deps
         assert new_node in image.deps
+
+
+@pytest.mark.unit
+def test_visit_graph_order():
+    """Test visit graph order traversal"""
+    nodes = [TestImageNode(-1, []) for _ in range(5)]
+    nodes[2].deps = [nodes[3]]
+    nodes[1].deps = [nodes[4], nodes[2]]
+    nodes[0].deps = [nodes[4], nodes[1]]
+
+    visit_mock_pre = Mock(side_effect=lambda img: img)
+    visit_mock_post = Mock()
+    assert (
+        visit_graph(nodes[:1], visit_mock_pre, visit_func_post=visit_mock_post)
+        == nodes[:1]
+    )
+
+    visit_mock_pre.assert_has_calls(
+        [
+            call(nodes[0]),
+            call(nodes[4]),
+            call(nodes[1]),
+            call(nodes[2]),
+            call(nodes[3]),
+        ]
+    )
+    visit_mock_post.assert_has_calls(
+        [
+            call(nodes[4]),
+            call(nodes[3]),
+            call(nodes[2]),
+            call(nodes[1]),
+            call(nodes[0]),
+        ]
+    )
 
 
 @pytest.mark.unit

@@ -1,39 +1,19 @@
-from dataclasses import dataclass
 import os
-from typing import Any, Dict, List, Iterable, Optional, Tuple
+from typing import Any, Dict, List, Iterable, Optional
 
 import yaml
 
 from .config import TplConfig
 from .exceptions import TplBuildException
-from .images import (
-    ImageDefinition,
-    SourceImage,
+from .images import SourceImage
+from .plan import (
+    BuildPlanner,
+    BuildOperation,
 )
 from .render import (
     BuildRenderer,
     StageData,
 )
-
-
-@dataclass
-class BuildOperation:
-    """
-    Dataclass describing one build work unit. Each BuildOperation roughly
-    corresponds to an invocation of the underlying image builder. Each
-    operation in the chain of `image`, `image.parent`,
-    `image.parent.parent`, ... up to but not including `root` will
-    be part of this build unit.
-    """
-
-    #: The resulting image of this build operation
-    image: ImageDefinition
-    #: The parent image of this build operation
-    root: ImageDefinition
-    #: All stages associated with the resulting image
-    stages: Tuple[StageData, ...] = ()
-    #: All dependent build operations
-    dependencies: Tuple["BuildOperation", ...] = ()
 
 
 class TplBuild:
@@ -68,6 +48,7 @@ class TplBuild:
     def __init__(self, base_dir: str, config: Dict[str, Any]) -> None:
         self.base_dir = base_dir
         self.config = TplConfig(**config)
+        self.planner = BuildPlanner()
         self.renderer = BuildRenderer(self.base_dir, self.config)
 
     def _get_config_data(
@@ -115,12 +96,12 @@ class TplBuild:
             self._get_config_data(config_name, platform=platform)
         )
 
-    def plan(self, stage_names: Iterable[StageData]) -> List[BuildOperation]:
+    def plan(self, stages: Iterable[StageData]) -> List[BuildOperation]:
         """
         Plan how to build the given list of stage names.
         """
         # pylint: disable=unused-argument,no-self-use
-        return []
+        return self.planner.plan(stages)
 
     def get_source_image(self, repo: str, tag: str) -> Optional[SourceImage]:
         """

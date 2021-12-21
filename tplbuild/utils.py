@@ -5,6 +5,7 @@ from .exceptions import TplBuildException
 from .images import ImageDefinition
 
 VisitFunc = Callable[[ImageDefinition], ImageDefinition]
+VisitFuncPost = Callable[[ImageDefinition], None]
 
 
 def json_encode(data: Any) -> str:
@@ -23,12 +24,17 @@ def json_raw_decode(data: str) -> Tuple[Any, int]:
 
 
 def visit_graph(
-    roots: Iterable[ImageDefinition], visit_func: VisitFunc
+    roots: Iterable[ImageDefinition],
+    visit_func: VisitFunc,
+    *,
+    visit_func_post: Optional[VisitFuncPost] = None,
 ) -> List[ImageDefinition]:
     """
     Traverses the image graph from the passed `roots` calling `visit_func` with
     each image. The graph is traveresed in pre-order allowing `visit_func` to
-    change a node before it is traversed.
+    change a node before it is traversed. `visit_func_post` can optionally
+    also be provided. If given this will be called with each image in post-order,
+    i.e. after each dependant image has been processed.
 
     visit_graph will raise TplBuildException if a cycle is detected in the graph.
     It will also automatically skip images taht have been visited already.
@@ -91,6 +97,8 @@ def visit_graph(
             image.set_dependencies(image_deps)
             on_stack.remove(image)
             stack.pop()
+            if visit_func_post is not None:
+                visit_func_post(image)
         else:
             stack.append((dep_image, None, 0))
 
