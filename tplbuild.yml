@@ -2,6 +2,9 @@ version: "1.0"
 
 base_image_repo: msg555/base-{stage_name}
 
+dockerfile_syntax: 
+  docker/dockerfile:1
+
 platforms:
   - linux/amd64
   - linux/arm64

@@ -14,10 +14,15 @@ COPY . ./
 
 {{ begin_stage("tplbuild", parent="tplbuild-base") }}
 
-
 COPY . ./
 
 COPY --from=["ubuntu", "20.04"] /bin/bash ./bash
 
 ENV PYTHONPATH="${PYTHONPATH}:/tplbuild"
 ENTRYPOINT ["python3", "-m", "tplbuild"]
+
+{{ begin_stage("otherstage", parent="tplbuild-base") }}
+
+COPY . ./
+
+RUN do_stuff

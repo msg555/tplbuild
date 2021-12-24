@@ -5,6 +5,7 @@ import yaml
 
 from .config import TplConfig
 from .exceptions import TplBuildException
+from .executor import BuildExecutor
 from .images import SourceImage
 from .plan import (
     BuildPlanner,
@@ -50,6 +51,7 @@ class TplBuild:
         self.config = TplConfig(**config)
         self.planner = BuildPlanner()
         self.renderer = BuildRenderer(self.base_dir, self.config)
+        self.executor = BuildExecutor(self.config.client)
 
     def _get_config_data(
         self,
@@ -102,6 +104,12 @@ class TplBuild:
         """
         # pylint: disable=unused-argument,no-self-use
         return self.planner.plan(stages)
+
+    async def build(self, build_ops: Iterable[BuildOperation]) -> None:
+        """
+        Execute the build operatoins.
+        """
+        await self.executor.build(build_ops)
 
     def get_source_image(self, repo: str, tag: str) -> Optional[SourceImage]:
         """

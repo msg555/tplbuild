@@ -1,7 +1,9 @@
+import asyncio
+
 from .tplbuild import TplBuild
 
 
-def main():
+async def main():
     """
     Main tplbuild entrypoint.
     """
@@ -12,5 +14,7 @@ def main():
     for build_op in build_ops:
         print(type(build_op.image), [stage.name for stage in build_op.stages])
 
+    await bld.build(build_ops)
 
-main()
+
+asyncio.run(main())
