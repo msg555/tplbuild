@@ -4,7 +4,7 @@ import os.path
 import re
 import sys
 import tarfile
-from typing import Iterable, Optional, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 from . import hashing
 from .exceptions import TplBuildContextException
@@ -186,6 +186,19 @@ class ContextPattern:
         return bool(self.pattern.search(path))
 
 
+def _apply_umask(mode: int, umask: Optional[int]) -> int:
+    """
+    Copy the user permission bits to group and all bits and then apply
+    the supplied umask. If umask is None just return mode instead.
+    """
+    if umask is None:
+        return mode
+    umode = (mode >> 6) & 0o7
+    mode &= ~0o777
+    mode |= ((umode << 6) | (umode << 3) | umode) & ~umask
+    return mode
+
+
 class BuildContext:
     """
     Class representing and capable of writing a build context.
@@ -204,7 +217,10 @@ class BuildContext:
     """
 
     def __init__(
-        self, base_dir: str, umask: Optional[int], ignore_patterns: Iterable[str]
+        self,
+        base_dir: Optional[str],
+        umask: Optional[int],
+        ignore_patterns: Iterable[str],
     ) -> None:
         self.base_dir = base_dir
         self.umask = umask
@@ -228,14 +244,80 @@ class BuildContext:
                 ignored = pattern.ignoring
         return ignored
 
-    def write_context(self, io_out: io.BytesIO, *, compress: bool = False) -> None:
+    def _write_context_files(self, tf: tarfile.TarFile) -> None:
+        """
+        Write all the context data from the file system.
+        """
+        assert self.base_dir is not None
+
+        def filter_tarinfo(ti: tarfile.TarInfo) -> tarfile.TarInfo:
+            """
+            Filter out metadata that should not be included in the build
+            context or its hash.
+            """
+            ti.uid = 0
+            ti.gid = 0
+            ti.uname = "root"
+            ti.gname = "root"
+            ti.mtime = 0
+            ti.mode = _apply_umask(ti.mode, self.umask)
+            if not ti.isreg() and not ti.islnk():
+                ti.size = 0
+            ti.devmajor = 0
+            ti.devminor = 0
+
+            return ti
+
+        for root, dir_names, file_names in os.walk(self.base_dir):
+            arch_root = os.path.relpath(root, self.base_dir)
+            if arch_root == ".":
+                arch_root = "/"
+            else:
+                arch_root = "/" + arch_root
+
+            tf.add(
+                root,
+                arcname="." + arch_root,
+                recursive=False,
+                filter=filter_tarinfo,
+            )
+
+            file_names[:] = sorted(
+                file_name
+                for file_name in file_names
+                if not self.ignored(os.path.join(arch_root, file_name))
+            )
+            dir_names[:] = sorted(
+                dir_name
+                for dir_name in dir_names
+                if not self.ignored(os.path.join(arch_root, dir_name))
+            )
+
+            for file_name in file_names:
+                tf.add(
+                    os.path.join(root, file_name),
+                    arcname="." + os.path.join(arch_root, file_name),
+                    recursive=False,
+                    filter=filter_tarinfo,
+                )
+
+    def write_context(
+        self,
+        io_out: io.BytesIO,
+        *,
+        extra_files: Optional[Dict[str, Tuple[int, bytes]]] = None,
+        compress: bool = False,
+    ) -> None:
         """
         Write the context to `io_out`.
 
         Args:
             io_out: The file-like object to write the build context to as a tar file.
+            extra_files: Extra file data to add at the root of the archive.
+                this is of the form (file mode, file data).
             compress: If set the output stream will be gzipped.
         """
+        extra_files = extra_files or {}
 
         with tarfile.open(
             fileobj=io_out,
@@ -243,63 +325,19 @@ class BuildContext:
             tarinfo=_PatchedTarInfo,
             mode=("w|gz" if compress else "w|"),
         ) as tf:
+            if self.base_dir is None:
+                ti = _PatchedTarInfo("./")
+                ti.mode = _apply_umask(0o777, self.umask)
+                ti.type = tarfile.DIRTYPE
+                tf.addfile(ti)
+            else:
+                self._write_context_files(tf)
 
-            def filter_tarinfo(ti: tarfile.TarInfo) -> tarfile.TarInfo:
-                """
-                Filter out metadata that should not be included in the build
-                context or its hash.
-                """
-                ti.uid = 0
-                ti.gid = 0
-                ti.uname = "root"
-                ti.gname = "root"
-                ti.mtime = 0
-
-                if self.umask is not None:
-                    umode = (ti.mode >> 6) & 0o7
-                    ti.mode &= ~0o777
-                    ti.mode |= ((umode << 6) | (umode << 3) | umode) & ~self.umask
-
-                if not ti.isreg() and not ti.islnk():
-                    ti.size = 0
-
-                ti.devmajor = 0
-                ti.devminor = 0
-
-                return ti
-
-            for root, dir_names, file_names in os.walk(self.base_dir):
-                arch_root = os.path.relpath(root, self.base_dir)
-                if arch_root == ".":
-                    arch_root = "/"
-                else:
-                    arch_root = "/" + arch_root
-
-                tf.add(
-                    root,
-                    arcname="." + arch_root,
-                    recursive=False,
-                    filter=filter_tarinfo,
-                )
-
-                file_names[:] = sorted(
-                    file_name
-                    for file_name in file_names
-                    if not self.ignored(os.path.join(arch_root, file_name))
-                )
-                dir_names[:] = sorted(
-                    dir_name
-                    for dir_name in dir_names
-                    if not self.ignored(os.path.join(arch_root, dir_name))
-                )
-
-                for file_name in file_names:
-                    tf.add(
-                        os.path.join(root, file_name),
-                        arcname="." + os.path.join(arch_root, file_name),
-                        recursive=False,
-                        filter=filter_tarinfo,
-                    )
+            for file_name, (file_mode, file_data) in extra_files.items():
+                ti = _PatchedTarInfo(file_name)
+                ti.mode = _apply_umask(file_mode, self.umask)
+                ti.size = len(file_data)
+                tf.addfile(ti, fileobj=io.BytesIO(file_data))
 
     @functools.cached_property
     def full_hash(self) -> str:

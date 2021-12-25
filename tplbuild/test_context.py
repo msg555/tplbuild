@@ -174,7 +174,7 @@ def test_write_context():
         assert len(ctx.symbolic_hash) == 64
 
         iob = io.BytesIO()
-        ctx.write_context(iob)
+        ctx.write_context(iob, extra_files={"./abc": (0o642, b"abcdata")})
         iob.seek(0)
         with tarfile.open(fileobj=iob) as tf:
             assert tf.getnames() == [
@@ -186,6 +186,7 @@ def test_write_context():
                 "./subdir/baz.c",
                 "./subdir/baz.c/deepfile",
                 "./subdir/baz.c/oth",
+                "./abc",
             ]
 
             # Check that file exists and had its metadata updated appropriately
@@ -195,6 +196,15 @@ def test_write_context():
             assert ti.mode == 0o755
             with tf.extractfile(ti) as tfile:
                 assert tfile.read() == b"nice\n"
+
+            ti = tf.getmember("./abc")
+            assert ti.isreg()
+            assert ti.uid == 0 and ti.gid == 0
+            assert ti.mode == 0o644
+            with tf.extractfile(ti) as tfile:
+                assert tfile.read() == b"abcdata"
+
+            # Check the same for a directory
 
             # Check the same for a directory
             ti = tf.getmember("./subdir/baz.c")
@@ -272,3 +282,51 @@ def test_write_context():
             assert ti.isdir()
             assert ti.uid == 0 and ti.gid == 0
             assert ti.mode == 0o755
+
+
+@pytest.mark.io
+def test_null_context():
+    """Test using a null context"""
+    ctx = BuildContext(None, 0o022, [])
+
+    assert (
+        ctx.full_hash
+        == "c4a048099cc72f0af94df1e9220c21551505d8b66ef533766e06bd897d19aea4"
+    )
+
+    iob = io.BytesIO()
+    ctx.write_context(iob)
+    iob.seek(0)
+    with tarfile.open(fileobj=iob) as tf:
+        assert tf.getnames() == ["."]
+
+        ti = tf.getmember(".")
+        assert ti.isdir()
+        assert ti.mode == 0o755
+
+    iob = io.BytesIO()
+    ctx.write_context(
+        iob, extra_files={"./abc": (0o742, b"abcdata"), "./def": (0o600, b"defdata")}
+    )
+    iob.seek(0)
+    with tarfile.open(fileobj=iob) as tf:
+        assert tf.getnames() == [".", "./abc", "./def"]
+
+        ti = tf.getmember(".")
+        assert ti.isdir()
+        assert ti.uid == 0 and ti.gid == 0
+        assert ti.mode == 0o755
+
+        ti = tf.getmember("./abc")
+        assert ti.isreg()
+        assert ti.uid == 0 and ti.gid == 0
+        assert ti.mode == 0o755
+        with tf.extractfile(ti) as tfile:
+            assert tfile.read() == b"abcdata"
+
+        ti = tf.getmember("./def")
+        assert ti.isreg()
+        assert ti.uid == 0 and ti.gid == 0
+        assert ti.mode == 0o644
+        with tf.extractfile(ti) as tfile:
+            assert tfile.read() == b"defdata"

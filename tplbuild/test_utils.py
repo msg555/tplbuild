@@ -16,7 +16,7 @@ from .utils import (
 )
 
 
-class TestImageNode(ImageDefinition):
+class ImageTestNode(ImageDefinition):
     """Test node with variable number of dependencies"""
 
     def __init__(self, depth: int, deps: List[ImageDefinition]) -> None:
@@ -77,17 +77,17 @@ def test_visit_graph_generate():
     """Test visit graph behavior toward genearting new nodes"""
 
     def visit_replace(image: ImageDefinition) -> ImageDefinition:
-        assert isinstance(image, TestImageNode)
+        assert isinstance(image, ImageTestNode)
 
         if image.depth < 10:
-            return TestImageNode(
+            return ImageTestNode(
                 image.depth,
-                [TestImageNode(image.depth + 1, []) for _ in range(2)],
+                [ImageTestNode(image.depth + 1, []) for _ in range(2)],
             )
 
         return image
 
-    root = TestImageNode(0, [])
+    root = ImageTestNode(0, [])
     result = visit_graph([root], visit_replace)
     assert len(result) == 1
     assert len(result) == 1 and result[0] is not root
@@ -97,16 +97,16 @@ def test_visit_graph_generate():
     assert visit_mock.call_count == 2 ** 11 - 1
 
     def visit_update(image: ImageDefinition) -> ImageDefinition:
-        assert isinstance(image, TestImageNode)
+        assert isinstance(image, ImageTestNode)
 
         if image.depth < 10:
             image.set_dependencies(
-                [TestImageNode(image.depth + 1, []) for _ in range(2)]
+                [ImageTestNode(image.depth + 1, []) for _ in range(2)]
             )
 
         return image
 
-    root = TestImageNode(0, [])
+    root = ImageTestNode(0, [])
     result = visit_graph([root], visit_update)
     assert len(result) == 1 and result[0] is root
 
@@ -120,13 +120,13 @@ def test_visit_graph():
     """Test visit graph behavior"""
     nodes = []
     for _ in range(10):
-        nodes.append(TestImageNode(-1, list(nodes)))
+        nodes.append(ImageTestNode(-1, list(nodes)))
 
     visit_mock = Mock(side_effect=lambda img: img)
     assert visit_graph(nodes, visit_mock) == nodes
     assert visit_mock.call_count == 10
 
-    new_node = TestImageNode(-1, [])
+    new_node = ImageTestNode(-1, [])
 
     def visit_replace(image: ImageDefinition) -> ImageDefinition:
         if image is nodes[3]:
@@ -146,7 +146,7 @@ def test_visit_graph():
 @pytest.mark.unit
 def test_visit_graph_order():
     """Test visit graph order traversal"""
-    nodes = [TestImageNode(-1, []) for _ in range(5)]
+    nodes = [ImageTestNode(-1, []) for _ in range(5)]
     nodes[2].deps = [nodes[3]]
     nodes[1].deps = [nodes[4], nodes[2]]
     nodes[0].deps = [nodes[4], nodes[1]]
