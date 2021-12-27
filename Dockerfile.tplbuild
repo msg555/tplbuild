@@ -12,7 +12,7 @@ COPY . ./
 {% endif %}
 
 
-{{ begin_stage("tplbuild", parent="tplbuild-base") }}
+{{ begin_stage("tplbuild", parent="tplbuild-base", tags=["tplbuild"]) }}
 
 COPY . ./
 

@@ -1,9 +1,14 @@
+import json
+import logging
 import os
 from typing import Any, Dict, List, Iterable, Optional
 
 import yaml
 
-from .config import TplConfig
+from .config import (
+    BuildData,
+    TplConfig,
+)
 from .exceptions import TplBuildException
 from .executor import BuildExecutor
 from .images import SourceImage
@@ -15,6 +20,8 @@ from .render import (
     BuildRenderer,
     StageData,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class TplBuild:
@@ -52,6 +59,14 @@ class TplBuild:
         self.planner = BuildPlanner()
         self.renderer = BuildRenderer(self.base_dir, self.config)
         self.executor = BuildExecutor(self.config.client)
+        try:
+            with open(
+                os.path.join(base_dir, ".tplbuilddata.json"), encoding="utf-8"
+            ) as fbuilddata:
+                self.build_data = BuildData(**json.load(fbuilddata))
+        except FileNotFoundError:
+            LOGGER.warning(".tplbuilddata.json not found, using empty bulid data")
+            self.build_data = BuildData()
 
     def _get_config_data(
         self,

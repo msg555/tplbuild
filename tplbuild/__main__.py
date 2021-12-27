@@ -9,6 +9,8 @@ async def main():
     """
     bld = TplBuild.from_path(".")
     stages = bld.render()
+    for stage_name, stage in stages.items():
+        print(stage_name, stage.tags)
     # print(stages)
     build_ops = bld.plan(stages.values())
     for build_op in build_ops:

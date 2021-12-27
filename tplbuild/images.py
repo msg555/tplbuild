@@ -142,6 +142,24 @@ class BaseImage(ImageDefinition):
 
 
 @dataclass(eq=False)
+class ExternalImage(ImageDefinition):
+    """
+    Image node representing an external image.
+
+    A SourceImage or BaseImage will be resolved into an ExternalImage after
+    build planning before build execution.
+
+    An ExternalImage cannot be hashed.
+    """
+
+    image: str
+
+    def calculate_hash(self, symbolic: bool) -> str:
+        """Calculate the hash of the image node."""
+        raise NotImplementedError("ExternalImage cannot be hashed")
+
+
+@dataclass(eq=False)
 class ContextImage(ImageDefinition):
     """Image node representing a build context"""
 

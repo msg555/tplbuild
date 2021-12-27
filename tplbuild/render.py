@@ -209,7 +209,7 @@ class BuildRenderer:
             metadata = {
                 "context": context,
                 "base": base,
-                "tag": tags,
+                "tags": tags,
                 "push_tags": push_tags,
             }
             metadata = {key: val for key, val in metadata.items() if val}

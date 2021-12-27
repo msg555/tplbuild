@@ -3,9 +3,17 @@ from asyncio.subprocess import DEVNULL, PIPE
 import logging
 import sys
 from typing import AsyncIterable, Awaitable, BinaryIO, Dict, Iterable, List, Optional
+import uuid
 
 from .config import ClientConfig
 from .exceptions import TplBuildException
+from .images import (
+    CommandImage,
+    ContextImage,
+    CopyCommandImage,
+    ExternalImage,
+    ImageDefinition,
+)
 from .plan import BuildOperation
 
 LOGGER = logging.getLogger(__name__)
@@ -83,16 +91,118 @@ class BuildExecutor:
 
     def __init__(self, client_config: ClientConfig) -> None:
         self.client_config = client_config
+        self.transient_prefix = ".tplbuild"
 
     async def build(self, build_ops: Iterable[BuildOperation]) -> None:
         """
         Build each of the passed build ops and tag/push all images.
         """
+        transient_images: List[str] = []
+        image_tag_map: Dict[ImageDefinition, str] = {}
+        try:
+            for build_op in build_ops:
+                # Construct mapping of all tags to a bool indicating if the
+                # tag should be pushed. The dict is ordered in the same order
+                # as the stages with the tags from each stage keeping the same
+                # relative order with push tags after tags.
+                tags: Dict[str, bool] = {}
+                for stage in build_op.stages:
+                    for tag in stage.tags:
+                        tags.setdefault(tag, False)
+                    for tag in stage.push_tags:
+                        tags[tag] = True
+
+                if tags:
+                    primary_tag = next(iter(tags))
+                else:
+                    primary_tag = f"{self.transient_prefix}-{uuid.uuid4()}"
+                    transient_images.append(primary_tag)
+
+                if isinstance(build_op.image, ContextImage):
+                    await self._build_context(primary_tag, build_op)
+                else:
+                    await self._build_work(primary_tag, build_op, image_tag_map)
+
+                image_tag_map[build_op.image] = primary_tag
+
+        finally:
+            excs = await asyncio.gather(
+                *(self.untag_image(image) for image in transient_images),
+                return_exceptions=True,
+            )
+
+            # If we're not in an exception already, raise any exception that
+            # ocurred untagging transient images. Otherwise we're just going to
+            # ignore the exceptions and assume any failures were a direct result
+            # of the previous failure and not worth mentioning.
+            _, cur_exc, _ = sys.exc_info()
+            if cur_exc is None:
+                for exc in excs:
+                    if isinstance(exc, BaseException):
+                        raise exc
+
+    async def _build_context(self, tag: str, build_op: BuildOperation) -> None:
+        """
+        Perform a build operation where the image is an ImageContext.
+        """
+
+    async def _build_work(
+        self,
+        tag: str,
+        build_op: BuildOperation,
+        image_tag_map: Dict[ImageDefinition, str],
+    ) -> None:
+        """
+        Perform a build operation as a series of Dockerfile commands.
+        """
+        lines = []
+
+        img = build_op.image
+        while img != build_op.root:
+            if isinstance(img, CommandImage):
+                lines.append(f"{img.command} {img.args}")
+                img = img.parent
+            elif isinstance(img, CopyCommandImage):
+                if img.context is build_op.inline_context:
+                    lines.append(f"COPY {img.command}")
+                else:
+                    lines.append(
+                        f"COPY --from={ self._name_image(img.context, image_tag_map) } {img.command}"
+                    )
+                img = img.parent
+            else:
+                raise AssertionError("Unexpected image type in build operation")
+
+        lines.append(f"FROM { self._name_image(img, image_tag_map) }")
+
+        dockerfile_data = "\n".join(reversed(lines)).encode("utf-8")
+        print(tag, dockerfile_data.decode())
+
+    def _name_image(
+        self, image: ImageDefinition, image_tag_map: Dict[ImageDefinition, str]
+    ) -> str:
+        """
+        Construct the name of an image from its ImageDefinition. `image` should always be
+        either an ExternalImage or the resulting image of a previously calculated
+        bulid operation.
+        """
+        tag = image_tag_map.get(image)
+        if tag is not None:
+            return tag
+        assert isinstance(image, ExternalImage)
+        return image.image
 
     async def client_build(self, image: str) -> None:
         """Wrapper that executes the client command to start a build"""
-        _create_subprocess(
+        await _create_subprocess(
             self.client_config.build,
             {"image": image},
             output_prefix=b"hello: ",
+        )
+
+    async def untag_image(self, image: str) -> None:
+        """Wrapper that executes the client untag command"""
+        await _create_subprocess(
+            self.client_config.untag,
+            {"image": image},
         )

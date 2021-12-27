@@ -95,3 +95,22 @@ class TplConfig(pydantic.BaseModel):
     #:     be referred to by name in the build file and should be unique
     #:     among all other stages.
     contexts: Dict[str, TplContextConfig] = {"default": TplContextConfig()}
+
+
+class BuildData(pydantic.BaseModel):
+    """
+    Any build data that is managed by tplbuild itself rather than being
+    configuraiton data provided by the user. Right now this includes a
+    mapping of source images and base images to their content address
+    sources.
+    """
+
+    #: Mapping of repo -> tag -> source image manifest hash.
+    source: Dict[str, Dict[str, str]] = {}
+    #: Mapping of config -> stage_name -> cached base image content hash. This
+    #: content hash is used to named the cached base image which is expected to
+    #: be available/pullable by anyone using tplbuild for a given project. The
+    #: content hash is taken as the non-symbolic hash of the base image build
+    #: node, this is not the image's manifest hash as is stored for source
+    #: images.
+    base: Dict[str, Dict[str, str]] = {}
