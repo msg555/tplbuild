@@ -47,7 +47,7 @@ class ClientConfig(pydantic.BaseModel):
 
     #: Build command arguments. The string {image} will be formatted with
     #: the desired target image for any part of the build command.
-    build: List[str] = ["docker", "build", "--tag", "{image}"]
+    build: List[str] = ["docker", "build", "--tag", "{image}", "-"]
     #: Tag command arguments. The string {source_image} and {target_image} will
     #: be formatted with the source_image and target_image respectively.
     tag: List[str] = ["docker", "tag", "{source_image}", "{target_image}"]

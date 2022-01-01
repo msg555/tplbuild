@@ -1,5 +1,8 @@
 {{ begin_stage("tplbuild-base", parent=("python", "3.10"), context="base", base=True) }}
 
+RUN echo hiya
+RUN sleep 10
+
 WORKDIR /tplbuild
 
 COPY . ./

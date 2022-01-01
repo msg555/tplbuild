@@ -6,15 +6,18 @@ from typing import AsyncIterable, Awaitable, BinaryIO, Dict, Iterable, List, Opt
 import uuid
 
 from .config import ClientConfig
+from .context import BuildContext
 from .exceptions import TplBuildException
 from .images import (
+    BaseImage,
     CommandImage,
     ContextImage,
     CopyCommandImage,
-    ExternalImage,
     ImageDefinition,
+    SourceImage,
 )
 from .plan import BuildOperation
+from .sync_to_async_pipe import SyncToAsyncPipe
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,6 +55,7 @@ async def _create_subprocess(
             dst.write(line)
             if not line.endswith(b"\n"):
                 dst.write(b"\n")
+            dst.flush()
 
     async def copy_input_data():
         """
@@ -89,9 +93,10 @@ class BuildExecutor:
     build commands.
     """
 
-    def __init__(self, client_config: ClientConfig) -> None:
+    def __init__(self, client_config: ClientConfig, base_image_repo: str) -> None:
         self.client_config = client_config
-        self.transient_prefix = ".tplbuild"
+        self.base_image_repo = base_image_repo
+        self.transient_prefix = "tplbuild"
 
     async def build(self, build_ops: Iterable[BuildOperation]) -> None:
         """
@@ -176,7 +181,11 @@ class BuildExecutor:
         lines.append(f"FROM { self._name_image(img, image_tag_map) }")
 
         dockerfile_data = "\n".join(reversed(lines)).encode("utf-8")
-        print(tag, dockerfile_data.decode())
+        await self.client_build(
+            tag,
+            dockerfile_data,
+            build_op.inline_context.context if build_op.inline_context else None,
+        )
 
     def _name_image(
         self, image: ImageDefinition, image_tag_map: Dict[ImageDefinition, str]
@@ -189,15 +198,55 @@ class BuildExecutor:
         tag = image_tag_map.get(image)
         if tag is not None:
             return tag
-        assert isinstance(image, ExternalImage)
-        return image.image
+        if isinstance(image, SourceImage):
+            assert image.digest is not None
+            return f"{image.repo}@{image.digest}"
+        if isinstance(image, BaseImage):
+            assert image.content_hash is not None
+            return (
+                self.base_image_repo.format(
+                    config=image.config,
+                    stage_name=image.stage_name,
+                )
+                + ":"
+                + image.content_hash
+            )
+        raise AssertionError("unexpected image type")
 
-    async def client_build(self, image: str) -> None:
+    async def client_build(
+        self,
+        image: str,
+        dockerfile_data: bytes,
+        context: Optional[BuildContext] = None,
+    ) -> None:
         """Wrapper that executes the client command to start a build"""
-        await _create_subprocess(
-            self.client_config.build,
-            {"image": image},
-            output_prefix=b"hello: ",
+        if context is None:
+            context = BuildContext(None, None, [])
+
+        pipe = SyncToAsyncPipe()
+
+        def sync_write_context():
+            context.write_context(
+                pipe,
+                extra_files={"Dockerfile": (0o444, dockerfile_data)},
+            )
+            pipe.close()
+
+        async def pipe_reader():
+            try:
+                while data := await pipe.read():
+                    yield data
+            finally:
+                pipe.close()
+
+        await asyncio.gather(
+            asyncio.get_running_loop().run_in_executor(None, sync_write_context),
+            _create_subprocess(
+                self.client_config.build,
+                {"image": image},
+                output_prefix=b"hello: ",
+                input_data=pipe_reader(),
+            ),
         )
 
     async def untag_image(self, image: str) -> None:

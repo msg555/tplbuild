@@ -1,7 +1,7 @@
 import abc
 from dataclasses import dataclass
 import functools
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 from .hashing import json_hash
 from .context import BuildContext
@@ -112,13 +112,26 @@ class SourceImage(ImageDefinition):
 
     repo: str
     tag: str
+    digest: Optional[str] = None
 
     def calculate_hash(self, symbolic: bool) -> str:
         """Calculate the hash of the image node."""
+        if symbolic:
+            return json_hash(
+                [
+                    type(self).__name__,
+                    self.repo,
+                    self.tag,
+                ]
+            )
+
+        if self.digest is None:
+            raise ValueError("Cannot full hash SourceImage with unresolved digest")
+
         return json_hash(
             [
                 type(self).__name__,
-                self.tag,
+                self.digest,
             ]
         )
 
@@ -129,34 +142,29 @@ class BaseImage(ImageDefinition):
 
     config: str
     stage_name: str
-    content_hash: str
+    content_hash: Optional[str] = None
 
     def calculate_hash(self, symbolic: bool) -> str:
         """Calculate the hash of the image node."""
+        if symbolic:
+            return json_hash(
+                [
+                    type(self).__name__,
+                    self.config,
+                    self.stage_name,
+                    self.content_hash,
+                ]
+            )
+
+        if self.content_hash is None:
+            raise ValueError("Cannot hash BaseImage with unresolved content hash")
+
         return json_hash(
             [
                 type(self).__name__,
                 self.content_hash,
             ]
         )
-
-
-@dataclass(eq=False)
-class ExternalImage(ImageDefinition):
-    """
-    Image node representing an external image.
-
-    A SourceImage or BaseImage will be resolved into an ExternalImage after
-    build planning before build execution.
-
-    An ExternalImage cannot be hashed.
-    """
-
-    image: str
-
-    def calculate_hash(self, symbolic: bool) -> str:
-        """Calculate the hash of the image node."""
-        raise NotImplementedError("ExternalImage cannot be hashed")
 
 
 @dataclass(eq=False)

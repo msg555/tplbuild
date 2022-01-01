@@ -9,7 +9,7 @@ platforms:
   - linux/amd64
   - linux/arm64
 
-default_config: dev
+default_config: release
 configs:
   dev:
     env: dev

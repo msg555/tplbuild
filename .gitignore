@@ -8,3 +8,4 @@ build
 dist
 *.pypi-token.gpg
 .venv
+.tplbuilddata.json

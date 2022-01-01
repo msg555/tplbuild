@@ -1,4 +1,7 @@
+import contextlib
 import json
+import os
+import tempfile
 from typing import Any, Callable, Iterable, List, Optional, Tuple
 
 from .exceptions import TplBuildException
@@ -127,3 +130,36 @@ def line_reader(document: str) -> Iterable[Tuple[int, str]]:
         line_parts.clear()
         if line:
             yield idx, line
+
+
+@contextlib.contextmanager
+def open_and_swap(filename, mode="w+b", buffering=-1, encoding=None, newline=None):
+    """
+    Open a file for writing and relink it to the desired path in an atomic
+    operation when the file is closed without an exception. This prevents
+    the existing file data from being lost if an unexpected failure occurs
+    while writing the file.
+    """
+    fd, tmppath = tempfile.mkstemp(
+        dir=os.path.dirname(filename) or ".",
+        text="b" not in mode,
+    )
+    fh = None
+    try:
+        fh = open(
+            fd,
+            mode=mode,
+            buffering=buffering,
+            encoding=encoding,
+            newline=newline,
+            closefd=False,
+        )
+        yield fh
+        os.rename(tmppath, filename)
+        tmppath = None
+    finally:
+        if fh is not None:
+            fh.close()
+        os.close(fd)
+        if tmppath is not None:
+            os.unlink(tmppath)
