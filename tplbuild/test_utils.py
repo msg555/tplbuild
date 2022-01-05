@@ -24,7 +24,7 @@ class ImageTestNode(ImageDefinition):
         self.depth = depth
         self.deps = deps
 
-    def calculate_hash(self, symbolic: bool) -> str:
+    def local_hash_data(self, symbolic: bool) -> str:
         raise NotImplementedError()
 
     def get_dependencies(self) -> List[ImageDefinition]:

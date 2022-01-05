@@ -2,9 +2,10 @@ import contextlib
 import json
 import os
 import tempfile
-from typing import Any, Callable, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .exceptions import TplBuildException
+from .hashing import json_hash
 from .images import ImageDefinition
 
 VisitFunc = Callable[[ImageDefinition], ImageDefinition]
@@ -104,6 +105,35 @@ def visit_graph(
                 visit_func_post(image)
         else:
             stack.append((dep_image, None, 0))
+
+
+def hash_graph(
+    roots: Iterable[ImageDefinition],
+    *,
+    symbolic=True,
+) -> Dict[ImageDefinition, str]:
+    """
+    Generate a mapping of image nodes to their hashes.
+
+    Arguments:
+        roots: The root of the build graph to hash.
+        symbolic: If set the hash is computed symbolicly. Otherwise a full
+            hash is done (in particular this means build contexts will be
+            fully read and hashed).
+    """
+    hash_mapping: Dict[ImageDefinition, str] = {}
+
+    def hash_node(image: ImageDefinition) -> None:
+        hash_mapping[image] = json_hash(
+            [
+                type(image).__name__,
+                image.local_hash_data(symbolic),
+                *(hash_mapping[dep] for dep in image.get_dependencies()),
+            ]
+        )
+
+    visit_graph(roots, lambda image: image, visit_func_post=hash_node)
+    return hash_mapping
 
 
 def line_reader(document: str) -> Iterable[Tuple[int, str]]:

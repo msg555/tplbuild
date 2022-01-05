@@ -10,7 +10,10 @@ from .images import (
     SourceImage,
 )
 from .render import StageData
-from .utils import visit_graph
+from .utils import (
+    hash_graph,
+    visit_graph,
+)
 
 
 @dataclass(eq=False)
@@ -59,22 +62,15 @@ class BuildPlanner:
                     images; any required dependant stages will automatically
                     be built but their tags will not be set if not listed here.
         """
-        stage_data = list(stages)
+        stage_data = list(stage for stage in stages if stage.tags or stage.push_tags)
         stage_images = [stage.image for stage in stage_data]
-
-        # Pre-calculate all the hashes. Don't want to do this
-        # on the call stack.
-        visit_graph(
-            stage_images,
-            lambda img: img,
-            visit_func_post=lambda img: img.symbolic_hash,
-        )
+        hash_mapping = hash_graph(stage_images)
 
         reverse_deps = collections.defaultdict(set)
-        canonical_image: Dict[ImageDefinition, ImageDefinition] = {}
+        canonical_image: Dict[str, ImageDefinition] = {}
 
         def canonicalize(image: ImageDefinition) -> ImageDefinition:
-            return canonical_image.setdefault(image.symbolic_hash, image)
+            return canonical_image.setdefault(hash_mapping[image], image)
 
         def mark_deps(image: ImageDefinition) -> None:
             for idx, dep in enumerate(image.get_dependencies()):

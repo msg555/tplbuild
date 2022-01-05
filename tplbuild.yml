@@ -1,6 +1,6 @@
 version: "1.0"
 
-base_image_repo: msg555/base-{stage_name}
+base_image_repo: msg555/base-{stage}
 
 dockerfile_syntax: 
   docker/dockerfile:1

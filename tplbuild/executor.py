@@ -2,7 +2,16 @@ import asyncio
 from asyncio.subprocess import DEVNULL, PIPE
 import logging
 import sys
-from typing import AsyncIterable, Awaitable, BinaryIO, Dict, Iterable, List, Optional
+from typing import (
+    AsyncIterable,
+    Awaitable,
+    BinaryIO,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+)
 import uuid
 
 from .config import ClientConfig
@@ -98,9 +107,21 @@ class BuildExecutor:
         self.base_image_repo = base_image_repo
         self.transient_prefix = "tplbuild"
 
-    async def build(self, build_ops: Iterable[BuildOperation]) -> None:
+    async def build(
+        self,
+        build_ops: Iterable[BuildOperation],
+        *,
+        complete_callback: Optional[Callable[[BuildOperation, str], None]] = None,
+    ) -> None:
         """
         Build each of the passed build ops and tag/push all images.
+
+        Arguments:
+            build_ops: The list of build operations to be completed. These build
+                operations should be topologically sorted (every build operation
+                should be listed after all of its dependencies).
+            complete_callback: If present this callback will be invoked for each
+                build operation as `complete_callback(build_op, primary_tag)`.
         """
         transient_images: List[str] = []
         image_tag_map: Dict[ImageDefinition, str] = {}
@@ -130,6 +151,8 @@ class BuildExecutor:
 
                 image_tag_map[build_op.image] = primary_tag
 
+                if complete_callback:
+                    complete_callback(build_op, primary_tag)
         finally:
             excs = await asyncio.gather(
                 *(self.untag_image(image) for image in transient_images),
@@ -202,15 +225,7 @@ class BuildExecutor:
             assert image.digest is not None
             return f"{image.repo}@{image.digest}"
         if isinstance(image, BaseImage):
-            assert image.content_hash is not None
-            return (
-                self.base_image_repo.format(
-                    config=image.config,
-                    stage_name=image.stage_name,
-                )
-                + ":"
-                + image.content_hash
-            )
+            return image.get_image_name(self.base_image_repo)
         raise AssertionError("unexpected image type")
 
     async def client_build(

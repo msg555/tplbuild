@@ -1,9 +1,7 @@
 import abc
 from dataclasses import dataclass
-import functools
-from typing import Iterable, List, Optional
+from typing import Any, Iterable, List, Optional
 
-from .hashing import json_hash
 from .context import BuildContext
 
 
@@ -14,30 +12,12 @@ class ImageDefinition(metaclass=abc.ABCMeta):
     """
 
     @abc.abstractmethod
-    def calculate_hash(self, symbolic: bool) -> str:
-        """Calculate the hash of the image node."""
-
-    @functools.cached_property
-    def full_hash(self):
+    def local_hash_data(self, symbolic: bool) -> Any:
         """
-        Returns the "full hash" of this image node. This is a hash over every
-        input to the build. Specifically, this does a full hash on all
-        build context data from disk.
+        Return a JSON-able payload suitable for hashing the image node. This
+        should not recursively include hashes of any dependencies.
         """
-        return self.calculate_hash(symbolic=False)
-
-    @functools.cached_property
-    def symbolic_hash(self):
-        """
-        Returns the "symbolic" hash of this image node. The symbolic hash
-        is like the full hash except build contexts will hash only the
-        parameters of the build context (i.e. root directory and ignore
-        patterns) rather than actually reading files from disk. This is
-        useful for quickly determining if two  images are identical for a
-        given build but is not useful across builds and can have false
-        negatives.
-        """
-        return self.calculate_hash(symbolic=True)
+        return None
 
     def get_dependencies(self) -> List["ImageDefinition"]:
         """
@@ -62,16 +42,12 @@ class CommandImage(ImageDefinition):
     command: str
     args: str
 
-    def calculate_hash(self, symbolic: bool) -> str:
-        """Calculate the hash of the image node."""
-        return json_hash(
-            [
-                type(self).__name__,
-                self.parent.symbolic_hash if symbolic else self.parent.full_hash,
-                self.command,
-                self.args,
-            ]
-        )
+    def local_hash_data(self, symbolic: bool) -> Any:
+        """Return the local hash data for this node."""
+        return [
+            self.command,
+            self.args,
+        ]
 
     def get_dependencies(self) -> List[ImageDefinition]:
         return [self.parent]
@@ -88,16 +64,8 @@ class CopyCommandImage(ImageDefinition):
     context: ImageDefinition
     command: str
 
-    def calculate_hash(self, symbolic: bool) -> str:
-        """Calculate the hash of the image node."""
-        return json_hash(
-            [
-                type(self).__name__,
-                self.parent.symbolic_hash if symbolic else self.parent.full_hash,
-                self.context.symbolic_hash if symbolic else self.context.full_hash,
-                self.command,
-            ]
-        )
+    def local_hash_data(self, symbolic: bool) -> str:
+        return self.command
 
     def get_dependencies(self) -> List[ImageDefinition]:
         return [self.parent, self.context]
@@ -114,57 +82,70 @@ class SourceImage(ImageDefinition):
     tag: str
     digest: Optional[str] = None
 
-    def calculate_hash(self, symbolic: bool) -> str:
-        """Calculate the hash of the image node."""
+    def local_hash_data(self, symbolic: bool) -> Any:
         if symbolic:
-            return json_hash(
-                [
-                    type(self).__name__,
-                    self.repo,
-                    self.tag,
-                ]
-            )
+            return [self.repo, self.tag]
 
         if self.digest is None:
             raise ValueError("Cannot full hash SourceImage with unresolved digest")
 
-        return json_hash(
-            [
-                type(self).__name__,
-                self.digest,
-            ]
-        )
+        return self.digest
 
 
 @dataclass(eq=False)
 class BaseImage(ImageDefinition):
-    """Image node representing a base image"""
+    """
+    Image node representing a base image.
+
+    Attributes:
+        config: Name of the configuration this base image belongs to.
+        stage: Name of the stage for this configuration.
+        image: The build graph behind this base image. This can be None if
+            the base image will not be dereferenced.
+        content_hash: The conent hash of the base image. Typically this is
+            supplied from tplbuild's cached build data and is used to find
+            the base image from an external repository.
+    """
 
     config: str
-    stage_name: str
+    stage: str
+    image: Optional[ImageDefinition] = None
     content_hash: Optional[str] = None
 
-    def calculate_hash(self, symbolic: bool) -> str:
-        """Calculate the hash of the image node."""
-        if symbolic:
-            return json_hash(
-                [
-                    type(self).__name__,
-                    self.config,
-                    self.stage_name,
-                    self.content_hash,
-                ]
+    def get_dependencies(self) -> List[ImageDefinition]:
+        return [self.image] if self.image else []
+
+    def set_dependencies(self, deps: Iterable[ImageDefinition]) -> None:
+        if deps:
+            (self.image,) = deps
+
+    def get_image_name(self, base_image_repo: str) -> str:
+        """
+        Return the appropriate image name given the passed base_image_repo format.
+        base_image_repo will be formatted with the keyword arguments `config`,
+        set to the name of the config this base image was rendered from, and
+        `stage`, set to the name of the stage of this base image.
+        """
+        if self.content_hash is None:
+            raise ValueError("Cannot get image name of base image with no content hash")
+
+        return (
+            base_image_repo.format(
+                config=self.config,
+                stage=self.stage,
             )
+            + ":"
+            + self.content_hash
+        )
+
+    def local_hash_data(self, symbolic: bool) -> Any:
+        if symbolic:
+            return [self.config, self.stage]
 
         if self.content_hash is None:
             raise ValueError("Cannot hash BaseImage with unresolved content hash")
 
-        return json_hash(
-            [
-                type(self).__name__,
-                self.content_hash,
-            ]
-        )
+        return self.content_hash
 
 
 @dataclass(eq=False)
@@ -173,11 +154,5 @@ class ContextImage(ImageDefinition):
 
     context: BuildContext
 
-    def calculate_hash(self, symbolic: bool) -> str:
-        """Calculate the hash of the image node."""
-        return json_hash(
-            [
-                type(self).__name__,
-                self.context.symbolic_hash if symbolic else self.context.full_hash,
-            ]
-        )
+    def local_hash_data(self, symbolic: bool) -> str:
+        return self.context.symbolic_hash if symbolic else self.context.full_hash

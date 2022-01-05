@@ -57,17 +57,23 @@ class SyncToAsyncPipe:
         If the stream is closed returns b"". Otherwise returns a non-empty bytes
         data object.
         """
+        waiter = None
         while True:
+            if waiter is not None:
+                # Wait for someone to write some data.
+                await waiter
+
             with self.buf_lock:
-                while self.buf_size == 0 and not self.closed:
+                if self.buf_size == 0 and not self.closed:
                     # Create new waiter, release lock, and wait for notification.
                     if self.waiter is not None:
                         raise RuntimeError(
                             "Cannot read from the same pipe multiple times concurrently"
                         )
 
-                    self.waiter = self.loop.create_future()
-                    break
+                    waiter = self.loop.create_future()
+                    self.waiter = waiter
+                    continue
 
                 if self.closed and self.buf_size == 0:
                     return b""
@@ -78,8 +84,6 @@ class SyncToAsyncPipe:
                 self.buf_size -= amt
                 self.buf_lock.notify()
                 return result
-
-            await self.waiter
 
     def close(self) -> None:
         """

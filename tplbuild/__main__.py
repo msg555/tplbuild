@@ -14,13 +14,12 @@ async def main():
     for stage_name, stage in stages.items():
         print(stage_name, stage.tags)
 
-    stages = {
-        stage_name: stage for stage_name, stage in stages.items() if stage.base == base
-    }
+    stages = [stage for stage in stages.values() if bool(stage.base_image) == base]
 
     await bld.resolve_source_images(stages)
+    await bld.resolve_base_images(stages, dereference=base)
     # print(stages)
-    build_ops = bld.plan(stages.values())
+    build_ops = bld.plan(stages)
     for build_op in build_ops:
         print(type(build_op.image), [stage.name for stage in build_op.stages])
 

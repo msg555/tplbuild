@@ -1,8 +1,9 @@
 import asyncio
+import functools
 import json
 import logging
 import os
-from typing import Any, Dict, List, Iterable, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from aioregistry import (
     AsyncRegistryClient,
@@ -18,6 +19,7 @@ from .config import (
 from .exceptions import TplBuildException
 from .executor import BuildExecutor
 from .images import (
+    BaseImage,
     ImageDefinition,
     SourceImage,
 )
@@ -30,6 +32,7 @@ from .render import (
     StageData,
 )
 from .utils import (
+    hash_graph,
     open_and_swap,
     visit_graph,
 )
@@ -95,9 +98,10 @@ class TplBuild:
         config_name: Optional[str] = None,
         *,
         platform: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> Tuple[str, Dict[str, Any]]:
         """
-        Returns the config data associated with the passed config name.
+        Returns the config name and config data for the default config or a specific
+        config name.
         """
         if config_name is None:
             config_name = self.config.default_config
@@ -107,6 +111,7 @@ class TplBuild:
         if config_name is None:
             # If no config was requested nor are any configured use an emtpy
             # configuration dictionary.
+            config_name = ""
             config_data = {}
         else:
             try:
@@ -116,11 +121,14 @@ class TplBuild:
                     f"Config {repr(config_name)} does not exist"
                 ) from exc
 
-        return {
-            "config": config_data,
-            "config_name": config_name,
-            "platform": platform,
-        }
+        return (
+            config_name,
+            {
+                "config": config_data,
+                "config_name": config_name,
+                "platform": platform,
+            },
+        )
 
     def render(
         self,
@@ -132,21 +140,62 @@ class TplBuild:
         Render all contexts and stages into StageData.
         """
         return self.renderer.render(
-            self._get_config_data(config_name, platform=platform)
+            *self._get_config_data(config_name, platform=platform)
         )
 
-    def plan(self, stages: Iterable[StageData]) -> List[BuildOperation]:
+    def plan(
+        self,
+        stages: List[StageData],
+    ) -> List[BuildOperation]:
         """
-        Plan how to build the given list of stage names.
+        Plan how to build the given list of stages.
+
+        Arguments:
+            stages: The list of stages to build in the form of
+                :class:`StageData` objects. Use :meth:`render`
+                to render all the stages for a given configuration.
+                You should also use :meth:`resolve_source_images`
+                and :meth:`resolve_base_images` before calling `plan`.
+
+        Returns:
+            A list of :class:`BuildOperation` objects that that define how
+            the stages are to be built. This list is returned topologically
+            sorted so that all dependencies of a stage appear before it.
+            Typically this should be fed into :meth:`build`.
         """
-        # pylint: disable=unused-argument,no-self-use
         return self.planner.plan(stages)
 
-    async def build(self, build_ops: Iterable[BuildOperation]) -> None:
+    async def build(
+        self,
+        build_ops: List[BuildOperation],
+    ) -> None:
         """
-        Execute the build operatoins.
+        Execute the build operations.
+
+        Arguments:
+            build_ops: The list of build operations to execute. This should be
+                topologically sorted each build operation appears only after all
+                of its dependencies have been listed. Typically this should just
+                be the return value from :meth:`plan`.
         """
-        await self.executor.build(build_ops)
+
+        def complete_callback(build_op: BuildOperation, primary_tag: str) -> None:
+            """
+            Update our internal build data cache for base images.
+            """
+            # pylint: disable=unused-argument
+            for stage in build_op.stages:
+                if stage.base_image:
+                    assert stage.base_image.content_hash is not None
+                    self.build_data.base.setdefault(stage.base_image.config, {})[
+                        stage.base_image.stage
+                    ] = stage.base_image.content_hash
+
+                # Save base images as soon as their done in case the build
+                # is later interrupted.
+                self._save_build_data()
+
+        await self.executor.build(build_ops, complete_callback=complete_callback)
 
     async def resolve_image(
         self,
@@ -191,9 +240,93 @@ class TplBuild:
             digest=manifest_ref.ref,
         )
 
-    async def resolve_source_images(self, stages: Dict[str, BuildOperation]) -> None:
+    async def resolve_base_images(
+        self,
+        stages: List[StageData],
+        *,
+        dereference=False,
+    ) -> None:
+        """
+        Resolve all :class:`BaseImage` nodes found in the image graph, setting
+        their `content_hash` attribute based on cached build data.
+
+        Arguments:
+            dereference: If True then all BaseImage nodes will be fully hashed
+                (including their build contexts) to produce a content hash
+                that will be set in the BaseImage node. This content hash will
+                be available at `stage.base_image` for any passed stages that
+                represent base images.
+
+                Further, when base images are resolved, if the computed
+                `content_hash` does not match the cached `content_hash` then
+                the node will be replaced with the base image's underlying
+                build definition.
+
+        This modifies the passed in build graph and does not return anything
+        directly.
+        """
+
+        full_hash_mapping = {}
+        if dereference:
+            full_hash_mapping = await asyncio.get_running_loop().run_in_executor(
+                None,
+                functools.partial(
+                    hash_graph,
+                    (stage.image for stage in stages if stage.base_image),
+                    symbolic=False,
+                ),
+            )
+
+            for stage in stages:
+                if stage.base_image:
+                    stage.base_image.content_hash = full_hash_mapping[stage.image]
+                    stage.image = stage.base_image
+
+        def _resolve_base(image: ImageDefinition) -> ImageDefinition:
+            if not isinstance(image, BaseImage):
+                return image
+
+            cached_content_hash = self.build_data.base.get(image.config, {}).get(
+                image.stage
+            )
+
+            if dereference:
+                if image.image is None:
+                    raise TplBuildException(
+                        "Attempt to derference base image that has no image definition"
+                    )
+
+                if full_hash_mapping[image.image] != cached_content_hash:
+                    return image.image
+
+            image.content_hash = cached_content_hash
+            if image.content_hash is None:
+                raise TplBuildException(
+                    f"No cached build of {image.config}/{image.stage}"
+                )
+
+            return image
+
+        images = visit_graph((stage.image for stage in stages), _resolve_base)
+        for stage, image in zip(stages, images):
+            stage.image = image
+
+            # If we're really building a base image add its push tag.
+            if stage.base_image and stage.image is not stage.base_image:
+                if self.config.base_image_repo is None:
+                    LOGGER.warning(
+                        "Attempting to build base image but no base image repo set"
+                    )
+                else:
+                    stage.push_tags += (
+                        stage.base_image.get_image_name(self.config.base_image_repo),
+                    )
+
+    async def resolve_source_images(self, stages: List[StageData]) -> None:
         """
         Resolve the manifest digest for each source image in the build graph.
+        This updates the build graph passed in to resolve_source_images and does
+        not return anything directly.
         """
         # Find all the source images first
         source_images = set()
@@ -203,7 +336,7 @@ class TplBuild:
                 source_images.add(image)
             return image
 
-        visit_graph((stage.image for stage in stages.values()), _visit_image)
+        visit_graph((stage.image for stage in stages), _visit_image)
 
         # Resolve all images into self.build_data.source.
         async with self.registry_client:
@@ -223,10 +356,8 @@ class TplBuild:
                 return source_image_map[image]
             return image
 
-        images = visit_graph(
-            (stage.image for stage in stages.values()), _replace_source_image
-        )
-        for stage, image in zip(stages.values(), images):
+        images = visit_graph((stage.image for stage in stages), _replace_source_image)
+        for stage, image in zip(stages, images):
             stage.image = image
 
     def _save_build_data(self):

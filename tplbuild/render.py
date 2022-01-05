@@ -49,8 +49,9 @@ class StageData:
     tags: Tuple[str, ...] = ()
     #: Tags to push for the built image
     push_tags: Tuple[str, ...] = ()
-    #: True if this is a base image
-    base: bool = False
+    #: If this is a base image this will be set as the appropriate base
+    #: image reference.
+    base_image: Optional[BaseImage] = None
 
 
 @dataclasses.dataclass(eq=False)
@@ -63,7 +64,7 @@ class _LateImageReference(ImageDefinition):
 
     image_desc: ImageDescriptor
 
-    def calculate_hash(self, symbolic: bool) -> str:
+    def local_hash_data(self, symbolic: bool) -> str:
         raise NotImplementedError(
             "LateImageReference should be removed before attempting to hash"
         )
@@ -151,14 +152,7 @@ class BuildRenderer:
                         f"Cannot resolve image reference to {repr(desc)}"
                     )
 
-                if stage.base:
-                    return BaseImage(
-                        config="TODO",
-                        stage_name=desc,
-                        content_hash="TODO",
-                    )
-
-                return stage.image
+                return stage.base_image or stage.image
 
             if isinstance(desc, list) and len(desc) == 2:
                 return SourceImage(
@@ -175,7 +169,9 @@ class BuildRenderer:
         for stage_data, stage_image in zip(stages.values(), stage_images):
             stage_data.image = stage_image
 
-    def render(self, config_data: Dict[str, Any]) -> Dict[str, StageData]:
+    def render(
+        self, config_name: str, config_data: Dict[str, Any]
+    ) -> Dict[str, StageData]:
         """
         Renders all build contexts and stages into its graph representation.
         """
@@ -235,8 +231,33 @@ class BuildRenderer:
                 default_factory=lambda: [default_context]
             )
 
-        image_stack = []
+        image_stack: List[ActiveImage] = []
         image_metadata: Dict[str, Dict[str, Any]] = {}
+
+        def _pop_image_stack():
+            """
+            Pop the image on the top of the stack and add the stage data to the
+            result.
+            """
+            img = image_stack.pop()
+            if img.name in result:
+                raise TplBuildException(f"Duplicate stage names {repr(img.name)}")
+
+            metadata = image_metadata.get(img.name, {})
+            stage_data = StageData(
+                name=img.name,
+                image=img.image,
+                tags=tuple(metadata.get("tags", [])),
+                push_tags=tuple(metadata.get("push_tags", [])),
+            )
+            if metadata.get("base"):
+                stage_data.base_image = BaseImage(
+                    image=img.image,
+                    config=config_name,
+                    stage=img.name,
+                )
+            result[img.name] = stage_data
+
         for line_num, line in line_reader(dockerfile_data):
             line_parts = line.split(maxsplit=1)
             cmd = line_parts[0].upper()
@@ -277,20 +298,7 @@ class BuildRenderer:
                     raise TplBuildException(
                         f"{line_num}: Unexpected extra data after END command"
                     )
-                if image_stack[-1].name in result:
-                    raise TplBuildException(
-                        f"Duplicate stage names {repr(image_stack[-1].name)}"
-                    )
-                img = image_stack[-1]
-                metadata = image_metadata.get(img.name, {})
-                result[img.name] = StageData(
-                    name=img.name,
-                    image=img.image,
-                    tags=tuple(metadata.get("tags", [])),
-                    push_tags=tuple(metadata.get("push_tags", [])),
-                    base=metadata.get("base", False),
-                )
-                image_stack.pop()
+                _pop_image_stack()
             elif cmd in ("RUN", "ENTRYPOINT", "COMMAND", "WORKDIR", "ENV"):
                 if not image_stack:
                     raise TplBuildException(
@@ -379,23 +387,9 @@ class BuildRenderer:
                 raise TplBuildException(f"Unsupported build command {repr(cmd)}")
 
         while image_stack:
-            if image_stack[-1].name in result:
-                raise TplBuildException(
-                    f"Duplicate stage names {repr(image_stack[-1].name)}"
-                )
-            img = image_stack[-1]
-            metadata = image_metadata.get(img.name, {})
-            result[img.name] = StageData(
-                name=img.name,
-                image=img.image,
-                tags=tuple(metadata.get("tags", [])),
-                push_tags=tuple(metadata.get("push_tags", [])),
-                base=metadata.get("base", False),
-            )
-            image_stack.pop()
+            _pop_image_stack()
 
         # TODO(msg): Make this a bit cleaner
-        # TODO(msg): Resolve LateImageReferences
 
         self._resolve_late_references(result)
 
