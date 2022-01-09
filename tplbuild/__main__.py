@@ -11,10 +11,11 @@ async def main():
 
     bld = TplBuild.from_path(".")
     stages = bld.render()
-    for stage_name, stage in stages.items():
-        print(stage_name, stage.tags)
 
-    stages = [stage for stage in stages.values() if bool(stage.base_image) == base]
+    if base:
+        stages = [stage for stage in stages.values() if stage.base_image is not None]
+    else:
+        stages = [stage for stage in stages.values() if stage.tags or stage.push_tags]
 
     await bld.resolve_source_images(stages)
     await bld.resolve_base_images(stages, dereference=base)

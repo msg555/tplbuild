@@ -107,6 +107,10 @@ class BuildExecutor:
         self.base_image_repo = base_image_repo
         self.transient_prefix = "tplbuild"
 
+        self.sem_build_jobs = asyncio.BoundedSemaphore(client_config.build_jobs)
+        self.sem_push_jobs = asyncio.BoundedSemaphore(client_config.push_jobs)
+        self.sem_tag_jobs = asyncio.BoundedSemaphore(client_config.tag_jobs)
+
     async def build(
         self,
         build_ops: Iterable[BuildOperation],
@@ -125,34 +129,56 @@ class BuildExecutor:
         """
         transient_images: List[str] = []
         image_tag_map: Dict[ImageDefinition, str] = {}
+        build_tasks: Dict[BuildOperation, Awaitable] = {}
+
+        async def _build_single(build_op: BuildOperation):
+
+            # Construct mapping of all tags to a bool indicating if the
+            # tag should be pushed. The dict is ordered in the same order
+            # as the stages with the tags from each stage keeping the same
+            # relative order with push tags after tags.
+            tags: Dict[str, bool] = {}
+            for stage in build_op.stages:
+                for tag in stage.tags:
+                    tags.setdefault(tag, False)
+                for tag in stage.push_tags:
+                    tags[tag] = True
+
+            if tags:
+                primary_tag = next(iter(tags))
+            else:
+                primary_tag = f"{self.transient_prefix}-{uuid.uuid4()}"
+
+            # Wait for dependencies to finish
+            for dep in build_op.dependencies:
+                await build_tasks[dep]
+
+            if isinstance(build_op.image, ContextImage):
+                await self._build_context(primary_tag, build_op)
+            else:
+                await self._build_work(primary_tag, build_op, image_tag_map)
+
+            if not tags:
+                transient_images.append(primary_tag)
+
+            image_tag_map[build_op.image] = primary_tag
+
+            for tag, push in tags.items():
+                if tag != primary_tag:
+                    await self.tag_image(primary_tag, tag)
+                if push:
+                    await self.push_image(tag)
+
+            if complete_callback:
+                complete_callback(build_op, primary_tag)
+
+        build_tasks.update(
+            (build_op, asyncio.create_task(_build_single(build_op)))
+            for build_op in build_ops
+        )
         try:
-            for build_op in build_ops:
-                # Construct mapping of all tags to a bool indicating if the
-                # tag should be pushed. The dict is ordered in the same order
-                # as the stages with the tags from each stage keeping the same
-                # relative order with push tags after tags.
-                tags: Dict[str, bool] = {}
-                for stage in build_op.stages:
-                    for tag in stage.tags:
-                        tags.setdefault(tag, False)
-                    for tag in stage.push_tags:
-                        tags[tag] = True
-
-                if tags:
-                    primary_tag = next(iter(tags))
-                else:
-                    primary_tag = f"{self.transient_prefix}-{uuid.uuid4()}"
-                    transient_images.append(primary_tag)
-
-                if isinstance(build_op.image, ContextImage):
-                    await self._build_context(primary_tag, build_op)
-                else:
-                    await self._build_work(primary_tag, build_op, image_tag_map)
-
-                image_tag_map[build_op.image] = primary_tag
-
-                if complete_callback:
-                    complete_callback(build_op, primary_tag)
+            for task in build_tasks.values():
+                await task
         finally:
             excs = await asyncio.gather(
                 *(self.untag_image(image) for image in transient_images),
@@ -160,7 +186,7 @@ class BuildExecutor:
             )
 
             # If we're not in an exception already, raise any exception that
-            # ocurred untagging transient images. Otherwise we're just going to
+            # occurred untagging transient images. Otherwise we're just going to
             # ignore the exceptions and assume any failures were a direct result
             # of the previous failure and not worth mentioning.
             _, cur_exc, _ = sys.exc_info()
@@ -186,7 +212,7 @@ class BuildExecutor:
         lines = []
 
         img = build_op.image
-        while img != build_op.root:
+        while img is not build_op.root:
             if isinstance(img, CommandImage):
                 lines.append(f"{img.command} {img.args}")
                 img = img.parent
@@ -199,6 +225,10 @@ class BuildExecutor:
                     )
                 img = img.parent
             else:
+                print("NAME", build_op.stages)
+                print(img)
+                print(build_op.root)
+                # print(build_op, build_op.image, build_op.root)
                 raise AssertionError("Unexpected image type in build operation")
 
         lines.append(f"FROM { self._name_image(img, image_tag_map) }")
@@ -235,38 +265,57 @@ class BuildExecutor:
         context: Optional[BuildContext] = None,
     ) -> None:
         """Wrapper that executes the client command to start a build"""
-        if context is None:
-            context = BuildContext(None, None, [])
+        async with self.sem_build_jobs:
+            if context is None:
+                context = BuildContext(None, None, [])
 
-        pipe = SyncToAsyncPipe()
+            pipe = SyncToAsyncPipe()
 
-        def sync_write_context():
-            context.write_context(
-                pipe,
-                extra_files={"Dockerfile": (0o444, dockerfile_data)},
-            )
-            pipe.close()
-
-        async def pipe_reader():
-            try:
-                while data := await pipe.read():
-                    yield data
-            finally:
+            def sync_write_context():
+                context.write_context(
+                    pipe,
+                    extra_files={"Dockerfile": (0o444, dockerfile_data)},
+                )
                 pipe.close()
 
-        await asyncio.gather(
-            asyncio.get_running_loop().run_in_executor(None, sync_write_context),
-            _create_subprocess(
-                self.client_config.build,
-                {"image": image},
-                output_prefix=b"hello: ",
-                input_data=pipe_reader(),
-            ),
-        )
+            async def pipe_reader():
+                try:
+                    while data := await pipe.read():
+                        yield data
+                finally:
+                    pipe.close()
+
+            await asyncio.gather(
+                asyncio.get_running_loop().run_in_executor(None, sync_write_context),
+                _create_subprocess(
+                    self.client_config.build,
+                    {"image": image},
+                    output_prefix=b"hello: ",
+                    input_data=pipe_reader(),
+                ),
+            )
+
+    async def tag_image(self, source_image: str, target_image: str) -> None:
+        """Wrapper that executes the client tag command"""
+        async with self.sem_tag_jobs:
+            await _create_subprocess(
+                self.client_config.tag,
+                {"source_image": source_image, "target_image": target_image},
+            )
 
     async def untag_image(self, image: str) -> None:
         """Wrapper that executes the client untag command"""
-        await _create_subprocess(
-            self.client_config.untag,
-            {"image": image},
-        )
+        async with self.sem_tag_jobs:
+            await _create_subprocess(
+                self.client_config.untag,
+                {"image": image},
+            )
+
+    async def push_image(self, image: str) -> None:
+        """Wrapper that executes the client push command"""
+        async with self.sem_push_jobs:
+            await _create_subprocess(
+                self.client_config.push,
+                {"image": image},
+                output_prefix=b"pushing stuff: ",
+            )

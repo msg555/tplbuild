@@ -1,7 +1,6 @@
 {{ begin_stage("tplbuild-base", parent=("python", "3.10"), context="base", base=True) }}
 
-RUN echo hiya
-RUN sleep 10
+COPY --from=["docker", "dind"] /usr/local/bin/docker /bin/
 
 WORKDIR /tplbuild
 
@@ -19,13 +18,12 @@ COPY . ./
 
 COPY . ./
 
-COPY --from=["ubuntu", "20.04"] /bin/bash ./bash
-
 ENV PYTHONPATH="${PYTHONPATH}:/tplbuild"
 ENTRYPOINT ["python3", "-m", "tplbuild"]
 
-{{ begin_stage("otherstage", parent="tplbuild-base") }}
+{{ begin_stage("nicestuff", parent="tplbuild-base", tags=["nice"]) }}
 
 COPY . ./
 
-RUN do_stuff
+ENV PYTHONPATH=wowow
+ENTRYPOINT ["python3", "-m", "tplbuild"]

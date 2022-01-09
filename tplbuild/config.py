@@ -60,6 +60,37 @@ class ClientConfig(pydantic.BaseModel):
     #: reclaimed by the underlying container engine.
     untag: List[str] = ["docker", "rmi", "{image}"]
 
+    #: Maximum number of concurrent build jobs. If set to 0 this will be set to
+    #: `os.cpu_count()`.
+    build_jobs: int = 1
+    #: Maximum number of concurrent push jobs.
+    push_jobs: int = 4
+    #: Maximum number of concurrent tag jobs.
+    tag_jobs: int = 32
+
+    @pydantic.validator("build_jobs")
+    def build_jobs_valid(cls, v):
+        """ensure build_jobs is non-negative"""
+        if v == 0:
+            return os.cpu_count()
+        if v < 0:
+            raise ValueError("build_jobs must be non-negative")
+        return v
+
+    @pydantic.validator("push_jobs")
+    def push_jobs_valid(cls, v):
+        """ensure push_jobs is positive"""
+        if v <= 0:
+            raise ValueError("push_jobs must be positive")
+        return v
+
+    @pydantic.validator("tag_jobs")
+    def tag_jobs_valid(cls, v):
+        """ensure tag_jobs is positive"""
+        if v <= 0:
+            raise ValueError("push_jobs must be positive")
+        return v
+
 
 class TplConfig(pydantic.BaseModel):
     """

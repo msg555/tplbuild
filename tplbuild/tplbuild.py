@@ -299,6 +299,7 @@ class TplBuild:
                 if full_hash_mapping[image.image] != cached_content_hash:
                     return image.image
 
+            image.image = None
             image.content_hash = cached_content_hash
             if image.content_hash is None:
                 raise TplBuildException(
