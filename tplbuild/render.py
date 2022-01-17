@@ -35,10 +35,14 @@ def extract_jinja_frames(exc_tb) -> str:
     lines = []
     while exc_tb:
         code = exc_tb.tb_frame.f_code
-        if code.co_name in (
-            "template",
-            "top-level template code",
-        ) or code.co_name.startswith("block "):
+        if (
+            code.co_name
+            in (
+                "template",
+                "top-level template code",
+            )
+            or code.co_name.startswith("block ")
+        ):
             lines.append(f"  at {code.co_filename}:{exc_tb.tb_lineno}")
         exc_tb = exc_tb.tb_next
     return "\n".join(lines)

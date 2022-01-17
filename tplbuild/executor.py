@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import sys
 import uuid
 from asyncio.subprocess import DEVNULL, PIPE
@@ -14,7 +15,7 @@ from typing import (
     Optional,
 )
 
-from .config import ClientConfig
+from .config import ClientCommand, ClientConfig
 from .context import BuildContext
 from .exceptions import TplBuildException
 from .images import (
@@ -32,7 +33,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 async def _create_subprocess(
-    args: List[str],
+    cmd: ClientCommand,
     params: Dict[str, str],
     *,
     output_prefix: Optional[bytes] = None,
@@ -41,11 +42,14 @@ async def _create_subprocess(
     """
     Create a subprocess and process its streams.
     """
+    env = dict(os.environ)
+    env.update(cmd.render_environment(params))
     proc = await asyncio.create_subprocess_exec(
-        *(arg.format(**params) for arg in args),
+        *cmd.render_args(params),
         stdout=DEVNULL if output_prefix is None else PIPE,
         stderr=DEVNULL if output_prefix is None else PIPE,
         stdin=DEVNULL if input_data is None else PIPE,
+        env=env,
     )
 
     async def copy_lines(src: asyncio.StreamReader, dst: BinaryIO) -> None:
