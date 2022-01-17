@@ -5,15 +5,9 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import jinja2
 
-from .config import (
-    TplConfig,
-    TplContextConfig,
-)
+from .config import TplConfig, TplContextConfig
 from .context import BuildContext
-from .exceptions import (
-    TplBuildException,
-    TplBuildTemplateException,
-)
+from .exceptions import TplBuildException, TplBuildTemplateException
 from .images import (
     BaseImage,
     CommandImage,
@@ -22,13 +16,7 @@ from .images import (
     ImageDefinition,
     SourceImage,
 )
-from .utils import (
-    json_encode,
-    json_decode,
-    json_raw_decode,
-    line_reader,
-    visit_graph,
-)
+from .utils import json_decode, json_encode, json_raw_decode, line_reader, visit_graph
 
 RESERVED_STAGE_NAMES = {"scratch"}
 

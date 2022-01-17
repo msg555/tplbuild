@@ -9,7 +9,6 @@ from typing import Dict, Iterable, Optional, Tuple
 from . import hashing
 from .exceptions import TplBuildContextException
 
-
 if sys.version_info < (3, 9):
 
     class _PatchedTarInfo(tarfile.TarInfo):

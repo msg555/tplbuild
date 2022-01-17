@@ -115,17 +115,30 @@ class TplConfig(pydantic.BaseModel):
     #:     default platform will be used. Images will be built for each of the
     #:     platforms as an image manifest by default.
     platforms: Optional[List[str]] = None
-    #: The name of the default config to use. If this is not set
-    #:     or refers to a non-existant config name the first config name from
-    #:     :attr:`configs` will be used instead.
-    default_config: Optional[str] = None
-    #: A mapping of config names to string-key template arguments to pass
-    #:     to any documents rendered through Jinja for this config.
+    #: The name of the default config to use. If this is empty
+    #:     the first config name from :attr:`configs` will be used instead.
     configs: Dict[str, Dict[str, Any]] = {}
     #: A set of named build context configurations. These contexts may
     #:     be referred to by name in the build file and should be unique
     #:     among all other stages.
+    default_config: str = ""
+    #: A mapping of config names to string-key template arguments to pass
+    #:     to any documents rendered through Jinja for this config.
     contexts: Dict[str, TplContextConfig] = {"default": TplContextConfig()}
+
+    @pydantic.validator("configs")
+    def config_name_nonempty(cls, v):
+        """Make sure all config names are non-empty"""
+        if any(config_name == "" for config_name in v):
+            raise ValueError("config name cannot be empty")
+        return v
+
+    @pydantic.validator("default_config")
+    def default_config_exists(cls, v, values):
+        """Make sure default config name exists if non-empty"""
+        if v and v not in values["configs"]:
+            raise ValueError("default_config must be a valid config name")
+        return v
 
 
 class BuildData(pydantic.BaseModel):

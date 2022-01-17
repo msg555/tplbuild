@@ -1,7 +1,8 @@
 import asyncio
-from asyncio.subprocess import DEVNULL, PIPE
 import logging
 import sys
+import uuid
+from asyncio.subprocess import DEVNULL, PIPE
 from typing import (
     AsyncIterable,
     Awaitable,
@@ -12,7 +13,6 @@ from typing import (
     List,
     Optional,
 )
-import uuid
 
 from .config import ClientConfig
 from .context import BuildContext

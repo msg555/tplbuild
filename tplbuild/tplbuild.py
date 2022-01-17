@@ -5,37 +5,16 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from aioregistry import (
-    AsyncRegistryClient,
-    RegistryException,
-    parse_image_name,
-)
 import yaml
+from aioregistry import AsyncRegistryClient, RegistryException, parse_image_name
 
-from .config import (
-    BuildData,
-    TplConfig,
-)
+from .config import BuildData, TplConfig
 from .exceptions import TplBuildException
 from .executor import BuildExecutor
-from .images import (
-    BaseImage,
-    ImageDefinition,
-    SourceImage,
-)
-from .plan import (
-    BuildPlanner,
-    BuildOperation,
-)
-from .render import (
-    BuildRenderer,
-    StageData,
-)
-from .utils import (
-    hash_graph,
-    open_and_swap,
-    visit_graph,
-)
+from .images import BaseImage, ImageDefinition, SourceImage
+from .plan import BuildOperation, BuildPlanner
+from .render import BuildRenderer, StageData
+from .utils import hash_graph, open_and_swap, visit_graph
 
 LOGGER = logging.getLogger(__name__)
 
@@ -93,6 +72,40 @@ class TplBuild:
             LOGGER.warning(".tplbuilddata.json not found, using empty bulid data")
             self.build_data = BuildData()
 
+    def lookup_base_image(
+        self,
+        stage_name: str,
+        *,
+        config_name: Optional[str] = None,
+    ) -> Tuple[str, BaseImage]:
+        """
+        Returns the full image name and unrendered :class:`BaseImage` image node
+        that represents the requested base image.
+
+        Raises:
+            KeyError: If the base image does not exist or has not been built
+            TplBuildException: If no base image repo is configured
+        """
+        if self.config.base_image_repo is None:
+            raise TplBuildException("No base image repo format configured")
+
+        config_name = config_name or self.default_config_name
+        cached_content_hash = self.build_data.base[config_name][stage_name]
+        image = BaseImage(
+            config=config_name,
+            stage=stage_name,
+            content_hash=cached_content_hash,
+        )
+        return image.get_image_name(self.config.base_image_repo), image
+
+    @property
+    def default_config_name(self) -> str:
+        """
+        Returns the default configuration name. If there are no configuration
+        profiles then this will return an empty string.
+        """
+        return self.config.default_config or next(iter(self.config.configs), "")
+
     def _get_config_data(
         self,
         config_name: Optional[str] = None,
@@ -103,12 +116,8 @@ class TplBuild:
         Returns the config name and config data for the default config or a specific
         config name.
         """
-        if config_name is None:
-            config_name = self.config.default_config
-            if config_name is None and self.config.configs:
-                config_name = next(iter(self.config.configs))
-
-        if config_name is None:
+        config_name = config_name or self.default_config_name
+        if not config_name:
             # If no config was requested nor are any configured use an emtpy
             # configuration dictionary.
             config_name = ""

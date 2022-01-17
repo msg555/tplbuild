@@ -10,10 +10,7 @@ from .images import (
     SourceImage,
 )
 from .render import StageData
-from .utils import (
-    hash_graph,
-    visit_graph,
-)
+from .utils import hash_graph, visit_graph
 
 
 @dataclass(eq=False)

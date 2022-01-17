@@ -4,16 +4,8 @@ from unittest.mock import Mock, call
 import pytest
 
 from .exceptions import TplBuildException
-from .images import (
-    CommandImage,
-    CopyCommandImage,
-    ImageDefinition,
-    SourceImage,
-)
-from .utils import (
-    line_reader,
-    visit_graph,
-)
+from .images import CommandImage, CopyCommandImage, ImageDefinition, SourceImage
+from .utils import line_reader, visit_graph
 
 
 class ImageTestNode(ImageDefinition):
