@@ -1,6 +1,7 @@
 import dataclasses
 import json
 import os
+import sys
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import jinja2
@@ -21,6 +22,26 @@ from .utils import json_decode, json_encode, json_raw_decode, line_reader, visit
 RESERVED_STAGE_NAMES = {"scratch"}
 
 ImageDescriptor = Union[str, Tuple[str, str]]
+
+
+def extract_jinja_frames(exc_tb) -> str:
+    """
+    Extract all the frames in the traceback that look like jinja frames
+
+    Returns:
+        A multiline string with a formatted traceback of all the Jinja
+        synthetic frames or an empty string if none were found.
+    """
+    lines = []
+    while exc_tb:
+        code = exc_tb.tb_frame.f_code
+        if code.co_name in (
+            "template",
+            "top-level template code",
+        ) or code.co_name.startswith("block "):
+            lines.append(f"  at {code.co_filename}:{exc_tb.tb_lineno}")
+        exc_tb = exc_tb.tb_next
+    return "\n".join(lines)
 
 
 @dataclasses.dataclass
@@ -76,7 +97,7 @@ class BuildRenderer:
         self,
         context_name: str,
         context_config: TplContextConfig,
-        config_data: Dict[str, Any],
+        profile_data: Dict[str, Any],
     ) -> ContextImage:
         """
         Renders a context config into a ContextImage graph representation.
@@ -103,11 +124,12 @@ class BuildRenderer:
 
         try:
             ignore_data = self.jinja_env.from_string(ignore_data).render(
-                config=config_data,
+                **profile_data,
             )
         except jinja2.TemplateError as exc:
             raise TplBuildTemplateException(
-                f"Failed to render ignore context for {repr(context_name)}"
+                f"Failed to render ignore context for {repr(context_name)}: {exc}",
+                more_message=extract_jinja_frames(sys.exc_info()[2]),
             ) from exc
 
         return ContextImage(
@@ -158,7 +180,7 @@ class BuildRenderer:
             stage_data.image = stage_image
 
     def render(
-        self, config_name: str, config_data: Dict[str, Any]
+        self, profile: str, profile_data: Dict[str, Any]
     ) -> Dict[str, StageData]:
         """
         Renders all build contexts and stages into its graph representation.
@@ -167,7 +189,7 @@ class BuildRenderer:
         result = {
             context_name: StageData(
                 name=context_name,
-                image=self._render_context(context_name, context_config, config_data),
+                image=self._render_context(context_name, context_config, profile_data),
             )
             for context_name, context_config in self.config.contexts.items()
         }
@@ -202,10 +224,16 @@ class BuildRenderer:
                 f"METADATA {json_encode(metadata)}\n"
             )
 
-        dockerfile_data = self.jinja_env.get_template("Dockerfile.tplbuild").render(
-            begin_stage=_begin_stage,
-            **config_data,
-        )
+        try:
+            dockerfile_data = self.jinja_env.get_template("Dockerfile.tplbuild").render(
+                begin_stage=_begin_stage,
+                **profile_data,
+            )
+        except jinja2.TemplateError as exc:
+            raise TplBuildTemplateException(
+                f"Failed to render build file: {type(exc)}",
+                more_message=extract_jinja_frames(sys.exc_info()[2]),
+            ) from exc
 
         @dataclasses.dataclass
         class ActiveImage:
@@ -240,9 +268,9 @@ class BuildRenderer:
             )
             if metadata.get("base"):
                 stage_data.base_image = BaseImage(
-                    image=img.image,
-                    config=config_name,
+                    profile=profile,
                     stage=img.name,
+                    image=img.image,
                 )
             result[img.name] = stage_data
 

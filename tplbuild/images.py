@@ -98,8 +98,8 @@ class BaseImage(ImageDefinition):
     Image node representing a base image.
 
     Attributes:
-        config: Name of the configuration this base image belongs to.
-        stage: Name of the stage for this configuration.
+        profile: Name of the profile this base image belongs to
+        stage: Name of the build stage
         image: The build graph behind this base image. This can be None if
             the base image will not be dereferenced.
         content_hash: The conent hash of the base image. Typically this is
@@ -107,7 +107,7 @@ class BaseImage(ImageDefinition):
             the base image from an external repository.
     """
 
-    config: str
+    profile: str
     stage: str
     image: Optional[ImageDefinition] = None
     content_hash: Optional[str] = None
@@ -122,8 +122,8 @@ class BaseImage(ImageDefinition):
     def get_image_name(self, base_image_repo: str) -> str:
         """
         Return the appropriate image name given the passed base_image_repo format.
-        base_image_repo will be formatted with the keyword arguments `config`,
-        set to the name of the config this base image was rendered from, and
+        `base_image_repo` will be formatted with the keyword arguments `profile`,
+        set to the name of the profile this base image was rendered from, and
         `stage`, set to the name of the stage of this base image.
         """
         if self.content_hash is None:
@@ -131,16 +131,15 @@ class BaseImage(ImageDefinition):
 
         return (
             base_image_repo.format(
-                config=self.config,
+                profile=self.profile,
                 stage=self.stage,
             )
-            + ":"
-            + self.content_hash
+            + f":{self.content_hash}"
         )
 
     def local_hash_data(self, symbolic: bool) -> Any:
         if symbolic:
-            return [self.config, self.stage]
+            return [self.profile, self.stage]
 
         if self.content_hash is None:
             raise ValueError("Cannot hash BaseImage with unresolved content hash")

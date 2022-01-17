@@ -15,9 +15,9 @@ class BaseLookupUtility(CliUtility):
             help="The base image stage name to lookup",
         )  # make repeatable
         parser.add_argument(
-            "--config",
+            "--profile",
             required=False,
-            help="Config to lookup the base image for",
+            help="Profile to lookup the base image for",
         )
         parser.add_argument(
             "--tag-only",
@@ -33,7 +33,7 @@ class BaseLookupUtility(CliUtility):
         for stage_name in args.image:
             try:
                 image_name, image = tplbld.lookup_base_image(
-                    stage_name, config_name=args.config
+                    stage_name, profile=args.profile
                 )
             except KeyError:
                 sys.stderr.write(f"could not find base image {repr(stage_name)}\n")

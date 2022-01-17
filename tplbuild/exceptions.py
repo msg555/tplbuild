@@ -3,6 +3,10 @@ class TplBuildException(Exception):
     Base class of all exceptions raised by tplbuild.
     """
 
+    def __init__(self, message, *, more_message="") -> None:
+        super().__init__(message)
+        self.more_message = more_message
+
 
 class TplBuildTemplateException(TplBuildException):
     """

@@ -92,6 +92,8 @@ async def main() -> int:
         )
     except TplBuildException as exc:
         sys.stderr.write(f"{exc}\n")
+        if exc.more_message:
+            sys.stderr.write(f"{exc.more_message}\n")
         LOGGER.debug("got top level tplbuild exception", exc_info=True)
         return 1
     except Exception:  # pylint: disable=broad-except

@@ -9,7 +9,7 @@ class BuildUtility(CliUtility):
 
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
         # Add support for
-        #   --config xyz (default to default config)
+        #   --profile xyz (default to default profile)
         #   --image xyz (repeatable)
         pass
 

@@ -3,7 +3,7 @@ import functools
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import yaml
 from aioregistry import AsyncRegistryClient, RegistryException, parse_image_name
@@ -43,20 +43,23 @@ class TplBuild:
             with open(
                 os.path.join(base_dir, "tplbuild.yml"), encoding="utf-8"
             ) as fconfig:
-                config = yaml.safe_load(fconfig)
+                config = TplConfig(**yaml.safe_load(fconfig))
         except FileNotFoundError:
-            config = {}
+            LOGGER.warning("No tplbuild.yml found, using default configuration")
+            config = TplConfig()
+        except (ValueError, TypeError) as exc:
+            raise TplBuildException(f"Failed to load configuration: {exc}") from exc
         return TplBuild(base_dir, config)
 
     def __init__(
         self,
         base_dir: str,
-        config: Dict[str, Any],
+        config: TplConfig,
         *,
         registry_client: AsyncRegistryClient = None,
     ) -> None:
         self.base_dir = base_dir
-        self.config = TplConfig(**config)
+        self.config = config
         self.planner = BuildPlanner()
         self.renderer = BuildRenderer(self.base_dir, self.config)
         self.executor = BuildExecutor(
@@ -76,7 +79,7 @@ class TplBuild:
         self,
         stage_name: str,
         *,
-        config_name: Optional[str] = None,
+        profile: str = "",
     ) -> Tuple[str, BaseImage]:
         """
         Returns the full image name and unrendered :class:`BaseImage` image node
@@ -89,68 +92,56 @@ class TplBuild:
         if self.config.base_image_repo is None:
             raise TplBuildException("No base image repo format configured")
 
-        config_name = config_name or self.default_config_name
-        cached_content_hash = self.build_data.base[config_name][stage_name]
+        profile = profile or self.default_profile
+        cached_content_hash = self.build_data.base[profile][stage_name]
         image = BaseImage(
-            config=config_name,
+            profile=profile,
             stage=stage_name,
             content_hash=cached_content_hash,
         )
         return image.get_image_name(self.config.base_image_repo), image
 
     @property
-    def default_config_name(self) -> str:
+    def default_profile(self) -> str:
         """
         Returns the default configuration name. If there are no configuration
         profiles then this will return an empty string.
         """
-        return self.config.default_config or next(iter(self.config.configs), "")
+        return self.config.default_profile or next(iter(self.config.profiles), "")
 
-    def _get_config_data(
-        self,
-        config_name: Optional[str] = None,
-        *,
-        platform: Optional[str] = None,
-    ) -> Tuple[str, Dict[str, Any]]:
+    def get_render_context(self, profile: str) -> Dict[str, Any]:
         """
-        Returns the config name and config data for the default config or a specific
-        config name.
+        Returns the render context to pass into Jinja to render the build file
+        for the given profile.
         """
-        config_name = config_name or self.default_config_name
-        if not config_name:
-            # If no config was requested nor are any configured use an emtpy
-            # configuration dictionary.
-            config_name = ""
-            config_data = {}
+        if not profile:
+            profile_data = {}
         else:
             try:
-                config_data = self.config.configs[config_name]
+                profile_data = self.config.profiles[profile]
             except KeyError as exc:
                 raise TplBuildException(
-                    f"Config {repr(config_name)} does not exist"
+                    f"Profile {repr(profile)} does not exist"
                 ) from exc
 
-        return (
-            config_name,
-            {
-                "config": config_data,
-                "config_name": config_name,
-                "platform": platform,
-            },
-        )
+        return {
+            "profile": profile,
+            **profile_data,
+        }
 
     def render(
         self,
-        config_name: Optional[str] = None,
-        *,
-        platform: Optional[str] = None,
+        profile: str = "",
     ) -> Dict[str, StageData]:
         """
         Render all contexts and stages into StageData.
+
+        Returns:
+            dict mapping stage names/context names to their
+            respective :class:`StageData`.
         """
-        return self.renderer.render(
-            *self._get_config_data(config_name, platform=platform)
-        )
+        profile = profile or self.default_profile
+        return self.renderer.render(profile, self.get_render_context(profile))
 
     def plan(
         self,
@@ -162,7 +153,7 @@ class TplBuild:
         Arguments:
             stages: The list of stages to build in the form of
                 :class:`StageData` objects. Use :meth:`render`
-                to render all the stages for a given configuration.
+                to render all the stages for a given profile.
                 You should also use :meth:`resolve_source_images`
                 and :meth:`resolve_base_images` before calling `plan`.
 
@@ -196,7 +187,7 @@ class TplBuild:
             for stage in build_op.stages:
                 if stage.base_image:
                     assert stage.base_image.content_hash is not None
-                    self.build_data.base.setdefault(stage.base_image.config, {})[
+                    self.build_data.base.setdefault(stage.base_image.profile, {})[
                         stage.base_image.stage
                     ] = stage.base_image.content_hash
 
@@ -295,7 +286,7 @@ class TplBuild:
             if not isinstance(image, BaseImage):
                 return image
 
-            cached_content_hash = self.build_data.base.get(image.config, {}).get(
+            cached_content_hash = self.build_data.base.get(image.profile, {}).get(
                 image.stage
             )
 
@@ -312,7 +303,7 @@ class TplBuild:
             image.content_hash = cached_content_hash
             if image.content_hash is None:
                 raise TplBuildException(
-                    f"No cached build of {image.config}/{image.stage}"
+                    f"No cached build of {image.profile}/{image.stage}"
                 )
 
             return image

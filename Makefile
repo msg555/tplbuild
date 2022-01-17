@@ -9,6 +9,7 @@ format:
 
 format-check:
 	$(PYTHON) -m black --check .
+	$(PYTHON) -m isort --profile=black --check .
 
 pylint:
 	$(PYTHON) -m pylint tplbuild

@@ -9,8 +9,8 @@ platforms:
   - linux/amd64
   - linux/arm64
 
-default_config: release
-configs:
+default_profile: release
+profiles:
   dev:
     env: dev
   release:
@@ -26,4 +26,4 @@ contexts:
     ignore: |
       *
       !requirements.txt
-      {% if config.env == "dev" %}!requirements-dev.txt{% endif %}
+      {% if env == "dev" %}!requirements-dev.txt{% endif %}

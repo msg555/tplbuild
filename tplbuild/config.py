@@ -3,6 +3,10 @@ from typing import Any, Dict, List, Literal, Optional
 
 import pydantic
 
+RESERVED_PROFILE_KEYS = {
+    "begin_stage",
+}
+
 
 class TplContextConfig(pydantic.BaseModel):
     """
@@ -93,9 +97,7 @@ class ClientConfig(pydantic.BaseModel):
 
 
 class TplConfig(pydantic.BaseModel):
-    """
-    Top level config model for tplbuild.
-    """
+    """Top level config model for tplbuild"""
 
     #: Must be "1.0"
     version: Literal["1.0"] = "1.0"
@@ -115,43 +117,54 @@ class TplConfig(pydantic.BaseModel):
     #:     default platform will be used. Images will be built for each of the
     #:     platforms as an image manifest by default.
     platforms: Optional[List[str]] = None
-    #: The name of the default config to use. If this is empty
-    #:     the first config name from :attr:`configs` will be used instead.
-    configs: Dict[str, Dict[str, Any]] = {}
+    #: A mapping of profile names to string-key template arguments to pass
+    #:     to any documents rendered through Jinja for each profile.
+    profiles: Dict[str, Dict[str, Any]] = {}
+    #: The name of the default profile to use. If this is empty
+    #:     the first profile name from :attr:`profiles` will be used instead.
+    default_profile: str = ""
     #: A set of named build context configurations. These contexts may
     #:     be referred to by name in the build file and should be unique
     #:     among all other stages.
-    default_config: str = ""
-    #: A mapping of config names to string-key template arguments to pass
-    #:     to any documents rendered through Jinja for this config.
     contexts: Dict[str, TplContextConfig] = {"default": TplContextConfig()}
 
-    @pydantic.validator("configs")
-    def config_name_nonempty(cls, v):
-        """Make sure all config names are non-empty"""
-        if any(config_name == "" for config_name in v):
-            raise ValueError("config name cannot be empty")
+    @pydantic.validator("profiles")
+    def profile_name_nonempty(cls, v):
+        """Make sure all profile names are non-empty"""
+        if any(profile_name == "" for profile_name in v):
+            raise ValueError("profile name cannot be empty")
         return v
 
-    @pydantic.validator("default_config")
-    def default_config_exists(cls, v, values):
-        """Make sure default config name exists if non-empty"""
-        if v and v not in values["configs"]:
-            raise ValueError("default_config must be a valid config name")
+    @pydantic.validator("profiles")
+    def profile_reserved_keys(cls, v):
+        """Make sure profile data does not use reserved keys"""
+        for profile, profile_data in v.items():
+            for reserved_key in RESERVED_PROFILE_KEYS:
+                if reserved_key in profile_data:
+                    raise ValueError(
+                        f"Profile {repr(profile)} cannot have reserved key {repr(reserved_key)}"
+                    )
+        return v
+
+    @pydantic.validator("default_profile")
+    def default_profile_exists(cls, v, values):
+        """Make sure default profile name exists if non-empty"""
+        if v and v not in values["profiles"]:
+            raise ValueError("default_profile must be a valid profile name")
         return v
 
 
 class BuildData(pydantic.BaseModel):
     """
     Any build data that is managed by tplbuild itself rather than being
-    configuraiton data provided by the user. Right now this includes a
+    configuration data provided by the user. Right now this includes a
     mapping of source images and base images to their content address
     sources.
     """
 
     #: Mapping of repo -> tag -> source image manifest hash.
     source: Dict[str, Dict[str, str]] = {}
-    #: Mapping of config -> stage_name -> cached base image content hash. This
+    #: Mapping of profile -> stage_name -> cached base image content hash. This
     #: content hash is used to named the cached base image which is expected to
     #: be available/pullable by anyone using tplbuild for a given project. The
     #: content hash is taken as the non-symbolic hash of the base image build
