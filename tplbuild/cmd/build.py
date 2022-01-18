@@ -11,6 +11,7 @@ class BuildUtility(CliUtility):
         # Add support for
         #   --profile xyz (default to default profile)
         #   --image xyz (repeatable)
+        #   --multi-platform
         pass
 
     async def main(self, args, tplbld: TplBuild) -> int:

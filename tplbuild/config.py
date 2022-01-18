@@ -3,8 +3,11 @@ from typing import Any, Dict, List, Literal, Optional
 
 import pydantic
 
+from .utils import format_simple
+
 RESERVED_PROFILE_KEYS = {
     "begin_stage",
+    "platform",
 }
 
 
@@ -42,11 +45,18 @@ class TplContextConfig(pydantic.BaseModel):
         return f".{os.path.sep}{os.path.normpath(os.path.join(os.path.sep, v))[1:]}"
 
 
-def _do_substitutions(s: str, substitutions: Dict[str, str]) -> str:
-    """Perform the requested substitutons on `s`."""
-    for key, val in substitutions.items():
-        s = s.replace("{" + key + "}", val)
-    return s
+def _validate_command(cmd: "ClientCommand", params: List[str]) -> "ClientCommand":
+    """Helper function to validate command format strings"""
+    params_dict = {key: "" for key in params}
+    try:
+        cmd.render_args(params_dict)
+    except KeyError as exc:
+        raise ValueError("command args format invalid: str(exc)") from exc
+    try:
+        cmd.render_environment(params_dict)
+    except KeyError as exc:
+        raise ValueError("command environment format invalid: str(exc)") from exc
+    return cmd
 
 
 class ClientCommand(pydantic.BaseModel):
@@ -65,14 +75,17 @@ class ClientCommand(pydantic.BaseModel):
     #: Additional environmental variables to pass to the command.
     environment: Dict[str, str] = {}
 
-    def render_args(self, params: Dict[str, str]) -> List[str]:
+    def render_args(
+        self,
+        params: Dict[str, str],
+    ) -> List[str]:
         """Return the list of arguments after being rendered with the given params"""
-        return [_do_substitutions(arg, params) for arg in self.args]
+        return [format_simple(arg, **params) for arg in self.args]
 
     def render_environment(self, params: Dict[str, str]) -> Dict[str, str]:
         """Return the environment after being rendered with the given params"""
         return {
-            key: _do_substitutions(val, params) for key, val in self.environment.items()
+            key: format_simple(val, **params) for key, val in self.environment.items()
         }
 
 
@@ -88,7 +101,7 @@ class ClientConfig(pydantic.BaseModel):
     build: ClientCommand
     #: Platform aware build command config. Arguments and environment
     #: values will be formatted with `image` as the desired build tag
-    #: and `platform`as the desired build platform. This must be configured
+    #: and `platform` as the desired build platform. This must be configured
     #: when doing platform aware builds.
     build_platform: Optional[ClientCommand] = None
     #: Tag command config. Arguments and evnrionment values will be
@@ -119,6 +132,36 @@ class ClientConfig(pydantic.BaseModel):
     #: Maximum number of concurrent tag jobs.
     tag_jobs: int = 32
 
+    @pydantic.validator("build")
+    def build_cmd_valid(cls, v):
+        """Make sure build command is valid"""
+        return _validate_command(v, ["image"])
+
+    @pydantic.validator("build_platform")
+    def build_platform_cmd_valid(cls, v):
+        """Make sure build platform command is valid"""
+        return _validate_command(v, ["image", "platform"])
+
+    @pydantic.validator("tag")
+    def tag_cmd_valid(cls, v):
+        """Make sure tag command is valid"""
+        return _validate_command(v, ["source_image", "target_image"])
+
+    @pydantic.validator("push")
+    def push_cmd_valid(cls, v):
+        """Make sure push command is valid"""
+        return _validate_command(v, ["image"])
+
+    @pydantic.validator("untag")
+    def untag_cmd_valid(cls, v):
+        """Make sure untag command is valid"""
+        return _validate_command(v, ["image"])
+
+    @pydantic.validator("platform")
+    def platform_cmd_valid(cls, v):
+        """Make sure platform command is valid"""
+        return _validate_command(v, [])
+
     @pydantic.validator("build_jobs")
     def build_jobs_valid(cls, v):
         """ensure build_jobs is non-negative"""
@@ -145,6 +188,9 @@ class ClientConfig(pydantic.BaseModel):
 
 DOCKER_CLIENT_CONFIG = ClientConfig(
     build=ClientCommand(
+        args=["docker", "build", "--tag", "{image}", "-"],
+    ),
+    build_platform=ClientCommand(
         args=["docker", "build", "--tag", "{image}", "-"],
         environment={
             "DOCKER_DEFAULT_PLATFORM": "{platform}",
@@ -183,8 +229,10 @@ class TplConfig(pydantic.BaseModel):
     #: this would be the place to do it.
     client: ClientConfig = DOCKER_CLIENT_CONFIG
     #: List of platforms to build images for. If not present only the
-    #:     default platform will be used. Images will be built for each of the
-    #:     platforms as an image manifest by default.
+    #:     default platform will be used. Base images will be built for each
+    #:     platform as an image image manifest by default. Top-level images
+    #:     will build only using the default platform unless --multi-platform
+    #:     is passed.
     platforms: Optional[List[str]] = None
     #: A mapping of profile names to string-key template arguments to pass
     #:     to any documents rendered through Jinja for each profile.

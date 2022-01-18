@@ -9,6 +9,7 @@ import jinja2
 from .config import TplConfig, TplContextConfig
 from .context import BuildContext
 from .exceptions import TplBuildException, TplBuildTemplateException
+from .graph import visit_graph
 from .images import (
     BaseImage,
     CommandImage,
@@ -17,7 +18,7 @@ from .images import (
     ImageDefinition,
     SourceImage,
 )
-from .utils import json_decode, json_encode, json_raw_decode, line_reader, visit_graph
+from .utils import json_decode, json_encode, json_raw_decode, line_reader
 
 RESERVED_STAGE_NAMES = {"scratch"}
 
@@ -102,6 +103,7 @@ class BuildRenderer:
         context_name: str,
         context_config: TplContextConfig,
         profile_data: Dict[str, Any],
+        platform: str,
     ) -> ContextImage:
         """
         Renders a context config into a ContextImage graph representation.
@@ -128,6 +130,7 @@ class BuildRenderer:
 
         try:
             ignore_data = self.jinja_env.from_string(ignore_data).render(
+                platform=platform,
                 **profile_data,
             )
         except jinja2.TemplateError as exc:
@@ -144,7 +147,9 @@ class BuildRenderer:
             )
         )
 
-    def _resolve_late_references(self, stages: Dict[str, StageData]) -> None:
+    def _resolve_late_references(
+        self, stages: Dict[str, StageData], platform: str
+    ) -> None:
         """
         Update all the images in `stages` to remove any _LateImageReference
         objects and replace them with the proper image.
@@ -172,6 +177,7 @@ class BuildRenderer:
                 return SourceImage(
                     repo=desc[0],
                     tag=desc[1],
+                    platform=platform,
                 )
 
             raise TplBuildException(f"Malformed image desc {repr(desc)}")
@@ -184,7 +190,7 @@ class BuildRenderer:
             stage_data.image = stage_image
 
     def render(
-        self, profile: str, profile_data: Dict[str, Any]
+        self, profile: str, profile_data: Dict[str, Any], platform: str
     ) -> Dict[str, StageData]:
         """
         Renders all build contexts and stages into its graph representation.
@@ -193,7 +199,9 @@ class BuildRenderer:
         result = {
             context_name: StageData(
                 name=context_name,
-                image=self._render_context(context_name, context_config, profile_data),
+                image=self._render_context(
+                    context_name, context_config, profile_data, platform
+                ),
             )
             for context_name, context_config in self.config.contexts.items()
         }
@@ -231,6 +239,7 @@ class BuildRenderer:
         try:
             dockerfile_data = self.jinja_env.get_template("Dockerfile.tplbuild").render(
                 begin_stage=_begin_stage,
+                platform=platform,
                 **profile_data,
             )
         except jinja2.TemplateError as exc:
@@ -274,6 +283,7 @@ class BuildRenderer:
                 stage_data.base_image = BaseImage(
                     profile=profile,
                     stage=img.name,
+                    platform=platform,
                     image=img.image,
                 )
             result[img.name] = stage_data
@@ -411,6 +421,7 @@ class BuildRenderer:
 
         # TODO(msg): Make this a bit cleaner
 
-        self._resolve_late_references(result)
+        print("RESOLVE", platform)
+        self._resolve_late_references(result, platform)
 
         return result

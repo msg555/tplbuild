@@ -24,6 +24,7 @@ from .images import (
     ContextImage,
     CopyCommandImage,
     ImageDefinition,
+    MultiPlatformImage,
     SourceImage,
 )
 from .plan import BuildOperation
@@ -158,7 +159,9 @@ class BuildExecutor:
                 await build_tasks[dep]
 
             if isinstance(build_op.image, ContextImage):
-                await self._build_context(primary_tag, build_op)
+                await self._build_context(primary_tag, build_op.image)
+            elif isinstance(build_op.image, MultiPlatformImage):
+                await self._push_manifest(primary_tag, build_op.image, image_tag_map)
             else:
                 await self._build_work(primary_tag, build_op, image_tag_map)
 
@@ -171,6 +174,8 @@ class BuildExecutor:
                 if tag != primary_tag:
                     await self.tag_image(primary_tag, tag)
                 if push:
+                    # TODO: Local build dependants should be able to
+                    #       progress while we're pushing.
                     await self.push_image(tag)
 
             if complete_callback:
@@ -199,10 +204,28 @@ class BuildExecutor:
                     if isinstance(exc, BaseException):
                         raise exc
 
-    async def _build_context(self, tag: str, build_op: BuildOperation) -> None:
+    async def _build_context(self, tag: str, image: ContextImage) -> None:
         """
         Perform a build operation where the image is an ImageContext.
         """
+        await self.client_build(
+            tag,
+            "",
+            b"FROM scratch\nCOPY . /\n",
+            image.context,
+        )
+
+    async def _push_manifest(
+        self,
+        tag: str,
+        image: MultiPlatformImage,
+        image_tag_map: Dict[ImageDefinition, str],
+    ) -> None:
+        """
+        Push a manifest to the requested registry.
+        """
+        # pylint: disable=unused-argument
+        print("BUILD MANIFEST PLEASE!")
 
     async def _build_work(
         self,
@@ -229,10 +252,6 @@ class BuildExecutor:
                     )
                 img = img.parent
             else:
-                print("NAME", build_op.stages)
-                print(img)
-                print(build_op.root)
-                # print(build_op, build_op.image, build_op.root)
                 raise AssertionError("Unexpected image type in build operation")
 
         lines.append(f"FROM { self._name_image(img, image_tag_map) }")
@@ -240,6 +259,7 @@ class BuildExecutor:
         dockerfile_data = "\n".join(reversed(lines)).encode("utf-8")
         await self.client_build(
             tag,
+            build_op.platform,
             dockerfile_data,
             build_op.inline_context.context if build_op.inline_context else None,
         )
@@ -265,10 +285,15 @@ class BuildExecutor:
     async def client_build(
         self,
         image: str,
+        platform: str,
         dockerfile_data: bytes,
         context: Optional[BuildContext] = None,
     ) -> None:
         """Wrapper that executes the client command to start a build"""
+
+        if platform and self.client_config.build_platform is None:
+            raise TplBuildException("No platform build client command configured")
+
         async with self.sem_build_jobs:
             if context is None:
                 context = BuildContext(None, None, [])
@@ -289,11 +314,18 @@ class BuildExecutor:
                 finally:
                     pipe.close()
 
+            cmd = self.client_config.build
+            params = {"image": image}
+            if platform:
+                assert self.client_config.build_platform is not None
+                cmd = self.client_config.build_platform
+                params["platform"] = platform
+
             await asyncio.gather(
                 asyncio.get_running_loop().run_in_executor(None, sync_write_context),
                 _create_subprocess(
-                    self.client_config.build,
-                    {"image": image},
+                    cmd,
+                    params,
                     output_prefix=b"hello: ",
                     input_data=pipe_reader(),
                 ),

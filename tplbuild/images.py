@@ -1,8 +1,9 @@
 import abc
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from .context import BuildContext
+from .utils import format_simple
 
 
 class ImageDefinition(metaclass=abc.ABCMeta):
@@ -80,16 +81,40 @@ class SourceImage(ImageDefinition):
 
     repo: str
     tag: str
+    platform: str = ""
     digest: Optional[str] = None
 
     def local_hash_data(self, symbolic: bool) -> Any:
         if symbolic:
-            return [self.repo, self.tag]
+            return [self.repo, self.tag, self.platform]
 
         if self.digest is None:
             raise ValueError("Cannot full hash SourceImage with unresolved digest")
 
-        return self.digest
+        return [self.platform, self.digest]
+
+
+@dataclass(eq=False)
+class MultiPlatformImage(ImageDefinition):
+    """
+    Container image node that merges multiple other images into a single
+    manifest list.
+
+    Attributes:
+        images: Mapping of platform names to images.
+    """
+
+    images: Dict[str, ImageDefinition]
+
+    def get_dependencies(self) -> List[ImageDefinition]:
+        return list(self.images.values())
+
+    def set_dependencies(self, deps: Iterable[ImageDefinition]) -> None:
+        for platform, dep in zip(self.images, deps):
+            self.images[platform] = dep
+
+    def local_hash_data(self, symbolic: bool) -> Any:
+        return list(self.images)
 
 
 @dataclass(eq=False)
@@ -100,6 +125,10 @@ class BaseImage(ImageDefinition):
     Attributes:
         profile: Name of the profile this base image belongs to
         stage: Name of the build stage
+        platform: The platform to select for this base image. For platform
+            aware builds if platform is empty than this node represents the
+            multi platform manifest list itself. Platform unaware builds
+            should have this be empty.
         image: The build graph behind this base image. This can be None if
             the base image will not be dereferenced.
         content_hash: The conent hash of the base image. Typically this is
@@ -109,6 +138,7 @@ class BaseImage(ImageDefinition):
 
     profile: str
     stage: str
+    platform: str = ""
     image: Optional[ImageDefinition] = None
     content_hash: Optional[str] = None
 
@@ -130,7 +160,8 @@ class BaseImage(ImageDefinition):
             raise ValueError("Cannot get image name of base image with no content hash")
 
         return (
-            base_image_repo.format(
+            format_simple(
+                base_image_repo,
                 profile=self.profile,
                 stage=self.stage,
             )
@@ -139,12 +170,12 @@ class BaseImage(ImageDefinition):
 
     def local_hash_data(self, symbolic: bool) -> Any:
         if symbolic:
-            return [self.profile, self.stage]
+            return [self.profile, self.stage, self.platform]
 
         if self.content_hash is None:
             raise ValueError("Cannot hash BaseImage with unresolved content hash")
 
-        return self.content_hash
+        return [self.content_hash, self.platform]
 
 
 @dataclass(eq=False)

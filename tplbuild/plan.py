@@ -2,15 +2,16 @@ import collections
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from .graph import hash_graph, visit_graph
 from .images import (
     BaseImage,
     ContextImage,
     CopyCommandImage,
     ImageDefinition,
+    MultiPlatformImage,
     SourceImage,
 )
 from .render import StageData
-from .utils import hash_graph, visit_graph
 
 
 @dataclass(eq=False)
@@ -30,6 +31,10 @@ class BuildOperation:
     image: ImageDefinition
     #: The parent image of this build operation
     root: ImageDefinition
+    #: The platform to run the build operation against. An empty platform
+    #: means to use the default platform (or the platform doesn't matter e.g.
+    #: for context build operations).
+    platform: str = ""
     #: The inline context to pass to the build, if any. A context can
     #: only be inlined if its needed nowhere else.
     inline_context: Optional[ContextImage] = None
@@ -71,7 +76,12 @@ class BuildPlanner:
 
         def mark_deps(image: ImageDefinition) -> None:
             for idx, dep in enumerate(image.get_dependencies()):
-                reverse_deps[dep].add((idx, image))
+                reverse_deps[dep].add(
+                    (
+                        idx == 0 and not isinstance(image, MultiPlatformImage),
+                        image,
+                    )
+                )
 
         # Normalize all images with the same hash into the same object.
         # At the same time create a reverse dependency graph on those
@@ -96,16 +106,19 @@ class BuildPlanner:
             """
             dependants = reverse_deps.get(image, set())
             stages = tuple(stages_by_image.get(image, []))
+
             if (
                 not stages
+                and not isinstance(image, MultiPlatformImage)
                 and len(dependants) == 1
-                and all(idx == 0 for idx, _ in dependants)
+                and next(iter(dependants))[0]
             ):
                 # Mid-build operation image, do nothing.
                 return
 
             # Generate build op, walking back the root as far as we can.
             root = image
+            platform = ""
             build_op_ctx_deps = set()
             build_op_other_deps = set()
             while root not in build_ops:
@@ -115,19 +128,34 @@ class BuildPlanner:
                     root = root.parent
                     continue
 
-                # Other images we handle generically.
                 deps = root.get_dependencies()
+
+                # Handle multi platform image nodes
+                if isinstance(root, MultiPlatformImage):
+                    print(list(root.images))
+                    print("HI MULTI", [id(x) for x in deps])
+                    assert image is root
+                    for dep in deps:
+                        build_op_other_deps.add(build_ops[dep])
+                    break
+
+                # Other images we handle generically.
                 if not deps:
+                    platform = getattr(root, "platform", "")
+                    print(root, platform)
                     break
                 for dep in deps[1:]:
                     build_op_other_deps.add(build_ops[dep])
                 root = deps[0]
             else:
-                build_op_other_deps.add(build_ops[root])
+                root_dep = build_ops[root]
+                platform = root_dep.platform
+                build_op_other_deps.add(root_dep)
 
             build_op = BuildOperation(
                 image=image,
                 root=root,
+                platform=platform,
                 stages=tuple(stages_by_image.get(image, [])),
                 dependencies=tuple(build_op_ctx_deps | build_op_other_deps),
             )

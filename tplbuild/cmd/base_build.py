@@ -16,7 +16,7 @@ class BaseBuildUtility(CliUtility):
 
     async def main(self, args, tplbld: TplBuild) -> int:
         # Render all build stages
-        stage_mapping = tplbld.render()
+        stage_mapping = tplbld.render_multi_platform()
 
         # Only build base image stages
         stages_to_build = [
@@ -33,6 +33,7 @@ class BaseBuildUtility(CliUtility):
 
         # Create a plan of build operations to execute the requested build.
         build_ops = tplbld.plan(stages_to_build)
+        print(len(build_ops))
 
         # Execute the build operations.
         await tplbld.build(build_ops)

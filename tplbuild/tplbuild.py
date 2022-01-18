@@ -1,9 +1,10 @@
 import asyncio
+import copy
 import functools
 import json
 import logging
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import yaml
 from aioregistry import AsyncRegistryClient, RegistryException, parse_image_name
@@ -11,10 +12,11 @@ from aioregistry import AsyncRegistryClient, RegistryException, parse_image_name
 from .config import BuildData, TplConfig
 from .exceptions import TplBuildException
 from .executor import BuildExecutor
-from .images import BaseImage, ImageDefinition, SourceImage
+from .graph import hash_graph, visit_graph
+from .images import BaseImage, ImageDefinition, MultiPlatformImage, SourceImage
 from .plan import BuildOperation, BuildPlanner
 from .render import BuildRenderer, StageData
-from .utils import hash_graph, open_and_swap, visit_graph
+from .utils import open_and_swap
 
 LOGGER = logging.getLogger(__name__)
 
@@ -131,7 +133,9 @@ class TplBuild:
 
     def render(
         self,
+        *,
         profile: str = "",
+        platform: str = "",
     ) -> Dict[str, StageData]:
         """
         Render all contexts and stages into StageData.
@@ -141,7 +145,74 @@ class TplBuild:
             respective :class:`StageData`.
         """
         profile = profile or self.default_profile
-        return self.renderer.render(profile, self.get_render_context(profile))
+        return self.renderer.render(profile, self.get_render_context(profile), platform)
+
+    def render_multi_platform(
+        self,
+        *,
+        profile: str = "",
+        platforms: Optional[Iterable[str]] = None,
+    ) -> Dict[str, StageData]:
+        """
+        Like :meth:`render` except render for every platform and combine stages
+        with the same name with a single :class:`MultiPlatformImage`.
+        """
+
+        if platforms is None:
+            if self.config.platforms is None:
+                raise TplBuildException(
+                    "No platforms configured, cannot build multi platform images"
+                )
+            platforms = self.config.platforms
+
+        profile = profile or self.default_profile
+        profile_data = self.get_render_context(profile)
+
+        stages: Dict[str, Dict[str, StageData]] = {}
+        for platform in platforms:
+            platform_stages = self.renderer.render(profile, profile_data, platform)
+            for stage_name, stage_data in platform_stages.items():
+                stages.setdefault(stage_name, {})[platform] = stage_data
+
+        multi_stages = {}
+        for stage_name, stage_map in stages.items():
+            # No need to make a manifest list if only one platform for a given stage.
+            if len(stage_map) == 1:
+                multi_stages[stage_name] = next(iter(stage_map.values()))
+                continue
+
+            stage_data = None  # type: ignore
+            image_map = {}
+            for platform, platform_stage in stage_map.items():
+                if stage_data is None:
+                    stage_data = copy.copy(platform_stage)
+                else:
+                    if (
+                        stage_data.tags != platform_stage.tags
+                        or stage_data.push_tags != platform_stage.push_tags
+                    ):
+                        raise TplBuildException(
+                            "tags for stage {repr(stage_name)} must match across platforms"
+                        )
+                    if (stage_data.base_image is None) != (
+                        platform_stage.base_image is None
+                    ):
+                        raise TplBuildException(
+                            "Stage {repr(stage_name)} must be a base image on none or all platforms"
+                        )
+                image_map[platform] = platform_stage.image
+
+            stage_data.image = MultiPlatformImage(images=image_map)
+            if stage_data.base_image is not None:
+                stage_data.base_image = BaseImage(
+                    profile=profile,
+                    stage=stage_name,
+                    image=stage_data.image,
+                )
+
+            multi_stages[stage_name] = stage_data
+
+        return multi_stages
 
     def plan(
         self,
@@ -237,6 +308,7 @@ class TplBuild:
         return SourceImage(
             repo=image.repo,
             tag=image.tag,
+            platform=image.platform,
             digest=manifest_ref.ref,
         )
 
