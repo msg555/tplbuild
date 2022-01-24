@@ -4,7 +4,7 @@ import functools
 import json
 import logging
 import os
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import yaml
 from aioregistry import (
@@ -173,35 +173,6 @@ class TplBuild:
         profile = profile or self.default_profile
         return self.renderer.render(profile, self.get_render_context(profile), platform)
 
-    def render_multi_platform(
-        self,
-        *,
-        profile: str = "",
-        platforms: Optional[Iterable[str]] = None,
-    ) -> Dict[str, Dict[str, StageData]]:
-        """
-        Like :meth:`render` except render for every platform. Returns a mapping of
-        `stage` -> `platform` -> :class:`StageData`.
-        """
-
-        if platforms is None:
-            if self.config.platforms is None:
-                raise TplBuildException(
-                    "No platforms configured, cannot build multi platform images"
-                )
-            platforms = self.config.platforms
-
-        profile = profile or self.default_profile
-        profile_data = self.get_render_context(profile)
-
-        stages: Dict[str, Dict[str, StageData]] = {}
-        for platform in platforms:
-            platform_stages = self.renderer.render(profile, profile_data, platform)
-            for stage_name, stage_data in platform_stages.items():
-                stages.setdefault(stage_name, {})[platform] = stage_data
-
-        return stages
-
     def plan(
         self,
         stages: List[StageData],
@@ -263,7 +234,7 @@ class TplBuild:
         image: SourceImage,
         *,
         check_only=False,
-        force_update=True,
+        force_update=False,
     ) -> SourceImage:
         """
         Resolves a SourceImage returning a new SourceImage object with the
@@ -448,7 +419,13 @@ class TplBuild:
                         stage.base_image.get_image_name(self.config.base_image_repo),
                     )
 
-    async def resolve_source_images(self, stages: List[StageData]) -> None:
+    async def resolve_source_images(
+        self,
+        stages: List[StageData],
+        *,
+        check_only=False,
+        force_update=False,
+    ) -> None:
         """
         Resolve the manifest digest for each source image in the build graph.
         This updates the build graph passed in to resolve_source_images and does
@@ -470,7 +447,12 @@ class TplBuild:
                 zip(
                     source_images,
                     await asyncio.gather(
-                        *(self.resolve_image(image) for image in source_images)
+                        *(
+                            self.resolve_image(
+                                image, check_only=check_only, force_update=force_update
+                            )
+                            for image in source_images
+                        )
                     ),
                 )
             )

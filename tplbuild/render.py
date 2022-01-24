@@ -419,9 +419,6 @@ class BuildRenderer:
         while image_stack:
             _pop_image_stack()
 
-        # TODO(msg): Make this a bit cleaner
-
-        print("RESOLVE", platform)
         self._resolve_late_references(result, platform)
 
         return result

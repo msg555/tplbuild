@@ -13,7 +13,7 @@ class BaseLookupUtility(CliUtility):
             "image",
             nargs="*",
             help="The base image stage name to lookup",
-        )  # make repeatable
+        )
         parser.add_argument(
             "--profile",
             required=False,

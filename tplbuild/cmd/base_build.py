@@ -10,28 +10,50 @@ class BaseBuildUtility(CliUtility):
     """CLI utility entrypoint for building base images"""
 
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
-        # Add support for
-        #   --profile xyz (default to all profiles)
-        #   --image xyz (repeatable)
-        #   --check
-        pass
+        parser.add_argument(
+            "image",
+            nargs="*",
+            help="Base image stage names to build. Defaults to all base stages",
+        )
+        parser.add_argument(
+            "--profile",
+            action="append",
+            help="Profile to build, can be given multiple times. Defaults to all profiles.",
+        )
+        parser.add_argument(
+            "--platform",
+            action="append",
+            help="Platform to lookup the base image of. Defaults to current executor platform",
+        )
+        parser.add_argument(
+            "--check",
+            required=False,
+            const=True,
+            default=False,
+            action="store_const",
+            help="Only verify that all requested base images are already built",
+        )
 
     async def main(self, args, tplbld: TplBuild) -> int:
-        # Render all build stages
-        stage_mapping = tplbld.render_multi_platform()
+        images = set(args.image)
+        profiles = args.profile or list(tplbld.config.profiles)
+        platforms = args.platform or tplbld.config.platforms
 
-        # Only build base image stages
+        # Render all build stages
         stages_to_build: List[StageData] = []
-        for platform_stages in stage_mapping.values():
-            stages_to_build.extend(
-                stage
-                for stage in platform_stages.values()
-                if stage.base_image is not None
-            )
+        for profile in profiles:
+            for platform in platforms:
+                stage_mapping = tplbld.render(profile=profile, platform=platform)
+                stages_to_build.extend(
+                    stage_data
+                    for stage_name, stage_data in stage_mapping.items()
+                    if stage_data.base_image is not None
+                    and (not images or stage_name in images)
+                )
 
         # Resolve the locked source image manifest content address from cached
         # build data.
-        await tplbld.resolve_source_images(stages_to_build)
+        await tplbld.resolve_source_images(stages_to_build, check_only=args.check)
 
         # Replace BaseImage nodes in the build graph with their underlying
         # build definition.
@@ -39,7 +61,11 @@ class BaseBuildUtility(CliUtility):
 
         # Create a plan of build operations to execute the requested build.
         build_ops = tplbld.plan(stages_to_build)
-        print(len(build_ops))
+        if args.check:
+            if not build_ops:
+                return 0
+            print(f"Needed {len(build_ops)} build operations")
+            return 1
 
         # Execute the build operations.
         await tplbld.build(build_ops)

@@ -132,8 +132,6 @@ class BuildPlanner:
 
                 # Handle multi platform image nodes
                 if isinstance(root, MultiPlatformImage):
-                    print(list(root.images))
-                    print("HI MULTI", [id(x) for x in deps])
                     assert image is root
                     for dep in deps:
                         build_op_other_deps.add(build_ops[dep])
@@ -142,7 +140,6 @@ class BuildPlanner:
                 # Other images we handle generically.
                 if not deps:
                     platform = getattr(root, "platform", "")
-                    print(root, platform)
                     break
                 for dep in deps[1:]:
                     build_op_other_deps.add(build_ops[dep])
