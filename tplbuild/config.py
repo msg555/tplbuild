@@ -206,7 +206,12 @@ DOCKER_CLIENT_CONFIG = ClientConfig(
         args=["docker", "rmi", "{image}"],
     ),
     platform=ClientCommand(
-        args=["docker", "info", "--format", "{{ .OSType }}/{{ .Architecture}}"],
+        args=[
+            "docker",
+            "info",
+            "--format",
+            "{{{{ .OSType }}}}/{{{{ .Architecture }}}}",
+        ],
     ),
 )
 
@@ -228,12 +233,12 @@ class TplConfig(pydantic.BaseModel):
     #: use a different builder or supply additional arguments to the build
     #: this would be the place to do it.
     client: ClientConfig = DOCKER_CLIENT_CONFIG
-    #: List of platforms to build images for. If not present only the
-    #:     default platform will be used. Base images will be built for each
-    #:     platform as an image image manifest by default. Top-level images
-    #:     will build only using the default platform unless --multi-platform
-    #:     is passed.
-    platforms: Optional[List[str]] = None
+    #: List of platforms to build images for. This defaults to linux/amd64
+    #:     but should be explicitly configured. Base images will be built
+    #:     for each platform listed here allowing for top-level images to
+    #:     be built in any of those platforms or as manifest lists when
+    #:     pushed.
+    platforms: List[str] = ["linux/amd64"]
     #: A mapping of profile names to string-key template arguments to pass
     #:     to any documents rendered through Jinja for each profile.
     profiles: Dict[str, Dict[str, Any]] = {}
@@ -244,6 +249,13 @@ class TplConfig(pydantic.BaseModel):
     #:     be referred to by name in the build file and should be unique
     #:     among all other stages.
     contexts: Dict[str, TplContextConfig] = {"default": TplContextConfig()}
+
+    @pydantic.validator("platforms")
+    def platform_nonempty(cls, v):
+        """Ensure that platforms is non empty"""
+        if not v:
+            raise ValueError("platforms cannot be empty")
+        return v
 
     @pydantic.validator("profiles")
     def profile_name_nonempty(cls, v):
@@ -279,12 +291,9 @@ class BuildData(pydantic.BaseModel):
     sources.
     """
 
-    #: Mapping of repo -> tag -> source image manifest hash.
-    source: Dict[str, Dict[str, str]] = {}
-    #: Mapping of profile -> stage_name -> cached base image content hash. This
-    #: content hash is used to named the cached base image which is expected to
-    #: be available/pullable by anyone using tplbuild for a given project. The
-    #: content hash is taken as the non-symbolic hash of the base image build
-    #: node, this is not the image's manifest hash as is stored for source
-    #: images.
-    base: Dict[str, Dict[str, str]] = {}
+    #: Mapping of repo -> tag -> platform -> source image manifest digest.
+    source: Dict[str, Dict[str, Dict[str, str]]] = {}
+    #: Mapping of profile -> stage_name -> platform -> cached base image
+    #: content hash. The content hash is taken as the non-symbolic hash of
+    #: the base image build node.
+    base: Dict[str, Dict[str, Dict[str, str]]] = {}

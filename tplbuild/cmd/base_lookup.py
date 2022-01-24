@@ -20,6 +20,11 @@ class BaseLookupUtility(CliUtility):
             help="Profile to lookup the base image for",
         )
         parser.add_argument(
+            "--platform",
+            required=False,
+            help="Platform to lookup the base image of. Defaults to current executor platform",
+        )
+        parser.add_argument(
             "--tag-only",
             required=False,
             const=True,
@@ -30,10 +35,11 @@ class BaseLookupUtility(CliUtility):
 
     async def main(self, args, tplbld: TplBuild) -> int:
         """Print out all the base image names/tags requested"""
+        platform = args.platform or await tplbld.get_default_platform()
         for stage_name in args.image:
             try:
                 image_name, image = tplbld.lookup_base_image(
-                    stage_name, profile=args.profile
+                    stage_name, platform, profile=args.profile
                 )
             except KeyError:
                 sys.stderr.write(f"could not find base image {repr(stage_name)}\n")

@@ -37,24 +37,39 @@ version: "1.0"
 # if using base images in your build file.
 base_image_repo: docker.myorg.com/base-{stage_name}
 
-# List of platforms to build images for. If not specified the default platform
-# for your builder will be used.
+# Some stuff that should probably be user specific.
+# TODO: Decide how to manage project configuration with user configuration.
+registry:
+  ssl_context:
+    insecure: false
+    cafile: null
+    capath: null
+
+# List of platforms to build images for. This will default to [linux/amd64]
+# but will generate a warning in all cases if unset. This is meant to reduce
+# the amount of configuration to get started but long term projects should
+# explicitly set the targetted platform list even if does match the default.
 platforms:
   - linux/amd64
   - linux/arm64
 
 # Define a mapping of template arguments for each build configuration you want
 # to support.
-default_config: dev
-configs:
+default_profile: dev
+profiles:
   dev:
     env: dev
     user: root
-    version: '0.1'
+    my_tags:
+      - myimage:latest
+      - myimage:dev
   release:
     env: release
     user: www-data
-    version: '0.1'
+    my_tags:
+      - myimage:latest
+    my_push_tags:
+      - myimage:v1.0.2
 
 # Defines the build contexts used in your images. If not present there will be
 # a single build context named "default" that points to the root build path
@@ -87,6 +102,7 @@ contexts:
     ignore: |
       *
       !requirements.txt
+      {% if env == "dev" %}!requirements-dev.txt{% endif %}
 ```
 
 ##### Sample Dockerfile.tplbuild
@@ -96,20 +112,15 @@ contexts:
 {{ begin_stage("myimage-base", from=("python", "3.8"), context="base", base=True) }}
   
 WORKDIR /work
-COPY requirements.txt ./
-RUN pip install -r requirements.txt
+COPY . ./
+RUN pip install -r requirements.txt {% if env == "dev" -%}-r requirements-dev.txt{%- endif %}
 
 
 # Define top level image stage. If this is a release build we'll also push
 # the image to our registry.
-{% if env == "release" %}
-  {% set push_tags = ["msg555/myimage:" + version] %}
-{% else %}
-  {% set push_tags = [] %}
-{% endif %}
-{{ begin_stage("myimage", from="myimage-base", tags="myimage", push_tags=push_tags) }}
+{{ begin_stage("myimage", from="myimage-base", tags=my_tags, push_tags=my_push_tags) }}
 
-COPY mymodule ./mymodule
+COPY src ./mymodule
 COMMAND ["python", "-m", "mymodule"]
 ```
 

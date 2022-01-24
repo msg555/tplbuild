@@ -41,7 +41,7 @@ def test_visit_graph_cycle():
         visit_graph([img], visit_mock)
     visit_mock.assert_called_once_with(img)
 
-    img_list = [SourceImage(repo="hi", tag="bye")]
+    img_list = [SourceImage(platform="linux/amd64", repo="hi", tag="bye")]
     for _ in range(9):
         img_list.append(
             CopyCommandImage(

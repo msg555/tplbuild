@@ -37,9 +37,10 @@ async def _create_subprocess(
     cmd: ClientCommand,
     params: Dict[str, str],
     *,
+    capture_output: bool = False,
     output_prefix: Optional[bytes] = None,
     input_data: Optional[AsyncIterable[bytes]] = None,
-) -> None:
+) -> bytes:
     """
     Create a subprocess and process its streams.
     """
@@ -47,29 +48,37 @@ async def _create_subprocess(
     env.update(cmd.render_environment(params))
     proc = await asyncio.create_subprocess_exec(
         *cmd.render_args(params),
-        stdout=DEVNULL if output_prefix is None else PIPE,
+        stdout=DEVNULL if output_prefix is None and not capture_output else PIPE,
         stderr=DEVNULL if output_prefix is None else PIPE,
         stdin=DEVNULL if input_data is None else PIPE,
         env=env,
     )
 
-    async def copy_lines(src: asyncio.StreamReader, dst: BinaryIO) -> None:
+    async def copy_lines(
+        src: asyncio.StreamReader,
+        dst: BinaryIO,
+        *,
+        output_prefix: Optional[bytes] = None,
+        output_arr: Optional[List[bytes]] = None,
+    ) -> None:
         """
         Copy lines of output from src to dst. It's assumed that dst is a non
         blocking output stream.
         """
-        assert output_prefix is not None
-
         while not src.at_eof():
             line = await src.readline()
             if not line:
                 continue
 
-            dst.write(output_prefix)
-            dst.write(line)
-            if not line.endswith(b"\n"):
-                dst.write(b"\n")
-            dst.flush()
+            if output_arr is not None:
+                output_arr.append(line)
+
+            if output_prefix is not None:
+                dst.write(output_prefix)
+                dst.write(line)
+                if not line.endswith(b"\n"):
+                    dst.write(b"\n")
+                dst.flush()
 
     async def copy_input_data():
         """
@@ -85,11 +94,24 @@ async def _create_subprocess(
         except (BrokenPipeError, ConnectionResetError):
             LOGGER.warning("process exited before finished writing input")
 
+    output_data: List[bytes] = []
     coros: List[Awaitable] = []
+    if output_prefix is not None or capture_output:
+        assert proc.stdout is not None
+        coros.append(
+            copy_lines(
+                proc.stdout,
+                sys.stdout.buffer,
+                output_prefix=output_prefix,
+                output_arr=output_data,
+            )
+        )
+
     if output_prefix is not None:
-        assert proc.stdout is not None and proc.stderr is not None
-        coros.append(copy_lines(proc.stdout, sys.stdout.buffer))
-        coros.append(copy_lines(proc.stderr, sys.stderr.buffer))
+        assert proc.stderr is not None
+        coros.append(
+            copy_lines(proc.stderr, sys.stderr.buffer, output_prefix=output_prefix)
+        )
 
     if input_data is not None:
         coros.append(copy_input_data())
@@ -99,6 +121,8 @@ async def _create_subprocess(
 
     if proc.returncode:
         raise TplBuildException("Client build command failed")
+
+    return b"".join(output_data)
 
 
 class BuildExecutor:
@@ -355,3 +379,17 @@ class BuildExecutor:
                 {"image": image},
                 output_prefix=b"pushing stuff: ",
             )
+
+    async def platform(self) -> str:
+        """
+        Returns the platform of the build daemon or an empty string if it
+        cannot be determined. No normalization of the returned platform is done.
+        """
+        if self.client_config.platform is None:
+            return ""
+
+        output = await _create_subprocess(self.client_config.platform, {})
+        try:
+            return output.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise TplBuildException("Failed to decode executor platform") from exc

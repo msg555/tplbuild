@@ -1,5 +1,5 @@
 import asyncio
-import copy
+import dataclasses
 import functools
 import json
 import logging
@@ -7,13 +7,22 @@ import os
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import yaml
-from aioregistry import AsyncRegistryClient, RegistryException, parse_image_name
+from aioregistry import (
+    AsyncRegistryClient,
+    ManifestListV2S2,
+    ManifestV1,
+    ManifestV2S2,
+    RegistryBlobRef,
+    RegistryException,
+    parse_image_name,
+)
 
+from .arch import client_platform, normalize_platform, normalize_platform_string
 from .config import BuildData, TplConfig
 from .exceptions import TplBuildException
 from .executor import BuildExecutor
 from .graph import hash_graph, visit_graph
-from .images import BaseImage, ImageDefinition, MultiPlatformImage, SourceImage
+from .images import BaseImage, ImageDefinition, SourceImage
 from .plan import BuildOperation, BuildPlanner
 from .render import BuildRenderer, StageData
 from .utils import open_and_swap
@@ -80,6 +89,7 @@ class TplBuild:
     def lookup_base_image(
         self,
         stage_name: str,
+        platform: str,
         *,
         profile: str = "",
     ) -> Tuple[str, BaseImage]:
@@ -95,10 +105,11 @@ class TplBuild:
             raise TplBuildException("No base image repo format configured")
 
         profile = profile or self.default_profile
-        cached_content_hash = self.build_data.base[profile][stage_name]
+        cached_content_hash = self.build_data.base[profile][stage_name][platform]
         image = BaseImage(
             profile=profile,
             stage=stage_name,
+            platform=platform,
             content_hash=cached_content_hash,
         )
         return image.get_image_name(self.config.base_image_repo), image
@@ -110,6 +121,21 @@ class TplBuild:
         profiles then this will return an empty string.
         """
         return self.config.default_profile or next(iter(self.config.profiles), "")
+
+    async def get_default_platform(self) -> str:
+        """
+        Calculate the default platform.
+        """
+        options = [
+            await self.executor.platform(),
+            client_platform(),
+        ]
+        for platform in options:
+            if platform:
+                platform = normalize_platform_string(platform)
+                if platform in self.config.platforms:
+                    return platform
+        return self.config.platforms[0]
 
     def get_render_context(self, profile: str) -> Dict[str, Any]:
         """
@@ -152,10 +178,10 @@ class TplBuild:
         *,
         profile: str = "",
         platforms: Optional[Iterable[str]] = None,
-    ) -> Dict[str, StageData]:
+    ) -> Dict[str, Dict[str, StageData]]:
         """
-        Like :meth:`render` except render for every platform and combine stages
-        with the same name with a single :class:`MultiPlatformImage`.
+        Like :meth:`render` except render for every platform. Returns a mapping of
+        `stage` -> `platform` -> :class:`StageData`.
         """
 
         if platforms is None:
@@ -174,45 +200,7 @@ class TplBuild:
             for stage_name, stage_data in platform_stages.items():
                 stages.setdefault(stage_name, {})[platform] = stage_data
 
-        multi_stages = {}
-        for stage_name, stage_map in stages.items():
-            # No need to make a manifest list if only one platform for a given stage.
-            if len(stage_map) == 1:
-                multi_stages[stage_name] = next(iter(stage_map.values()))
-                continue
-
-            stage_data = None  # type: ignore
-            image_map = {}
-            for platform, platform_stage in stage_map.items():
-                if stage_data is None:
-                    stage_data = copy.copy(platform_stage)
-                else:
-                    if (
-                        stage_data.tags != platform_stage.tags
-                        or stage_data.push_tags != platform_stage.push_tags
-                    ):
-                        raise TplBuildException(
-                            "tags for stage {repr(stage_name)} must match across platforms"
-                        )
-                    if (stage_data.base_image is None) != (
-                        platform_stage.base_image is None
-                    ):
-                        raise TplBuildException(
-                            "Stage {repr(stage_name)} must be a base image on none or all platforms"
-                        )
-                image_map[platform] = platform_stage.image
-
-            stage_data.image = MultiPlatformImage(images=image_map)
-            if stage_data.base_image is not None:
-                stage_data.base_image = BaseImage(
-                    profile=profile,
-                    stage=stage_name,
-                    image=stage_data.image,
-                )
-
-            multi_stages[stage_name] = stage_data
-
-        return multi_stages
+        return stages
 
     def plan(
         self,
@@ -258,8 +246,10 @@ class TplBuild:
             for stage in build_op.stages:
                 if stage.base_image:
                     assert stage.base_image.content_hash is not None
-                    self.build_data.base.setdefault(stage.base_image.profile, {})[
-                        stage.base_image.stage
+                    self.build_data.base.setdefault(
+                        stage.base_image.profile, {}
+                    ).setdefault(stage.base_image.stage, {})[
+                        stage.base_image.platform
                     ] = stage.base_image.content_hash
 
                 # Save base images as soon as their done in case the build
@@ -285,32 +275,93 @@ class TplBuild:
             check_only: Do not attempt to fetch the image if it is not cached.
                 This will trigger a TplBuildException if the image is not available.
             force_update: Update the image digest even if it is locally cached
+
+        Raises:
+            TplBuildException if the image could not be fetched or if it
+            has no matching platform.
         """
         if image.digest is not None:
             return image
 
-        manifest = self.build_data.source.get(image.repo, {}).get(image.tag)
-        if manifest is None or force_update:
-            if check_only:
-                raise TplBuildException("Source image does not exist, check only")
+        source_digest = (
+            self.build_data.source.get(image.repo, {})
+            .get(image.tag, {})
+            .get(image.platform)
+        )
+        if source_digest is not None and not force_update:
+            return dataclasses.replace(image, digest=source_digest)
+
+        if check_only:
+            raise TplBuildException("Source image does not exist, check only")
 
         # Grab the latest digest for the given source image.
-        manifest_ref = parse_image_name(image.repo)
-        manifest_ref.ref = image.tag
+        manifest_ref = parse_image_name(f"{image.repo}:{image.tag}")
         try:
             manifest_ref = await self.registry_client.manifest_resolve_tag(manifest_ref)
         except RegistryException as exc:
             raise TplBuildException("Failed to resolve source image") from exc
 
-        # Save the result into our build data
-        self.build_data.source.setdefault(image.repo, {})[image.tag] = manifest_ref.ref
+        # Download the manifest
+        try:
+            manifest = await self.registry_client.manifest_download(manifest_ref)
+        except RegistryException as exc:
+            raise TplBuildException("Failed to download source manifest") from exc
 
-        return SourceImage(
-            repo=image.repo,
-            tag=image.tag,
-            platform=image.platform,
-            digest=manifest_ref.ref,
-        )
+        # TODO: Should probably add some support in aioregistry itself for inspecting
+        #       image configs and getting platform information.
+        if isinstance(manifest, ManifestV1):
+            # Only one platform available, make sure it's the one we want.
+            image_platform = "linux/" + manifest.architecture
+            if image.platform != image_platform:
+                raise TplBuildException(
+                    f"Source image has incorrect architecture {repr(image_platform)}"
+                )
+        elif isinstance(manifest, ManifestV2S2):
+            # Only one platform available, make sure it's the one we want. V2 images
+            # require us to download the config to inspect.
+            config_ref = RegistryBlobRef(
+                registry=manifest_ref.registry,
+                repo=manifest_ref.repo,
+                ref=manifest.config.digest,
+            )
+            config_raw_data = [
+                chunk
+                async for chunk in self.registry_client.ref_content_stream(config_ref)
+            ]
+            config = json.loads(b"".join(config_raw_data).decode("utf-8"))
+            image_platform = normalize_platform(
+                config["os"],
+                config["architecture"],
+                config.get("variant", ""),
+            )
+            if image.platform != image_platform:
+                raise TplBuildException(
+                    f"Source image has incorrect architecture {repr(image_platform)}"
+                )
+        elif isinstance(manifest, ManifestListV2S2):
+            # Select appropriate sub-manifest based on the platform
+            for sub_manifest in manifest.manifests:
+                platform = sub_manifest.platform
+                if platform is None:
+                    continue
+                image_platform = normalize_platform(
+                    platform.os, platform.architecture, platform.variant
+                )
+                if image.platform == image_platform:
+                    manifest_ref = manifest_ref.copy(
+                        update=dict(ref=sub_manifest.digest)
+                    )
+                    break
+            else:
+                raise TplBuildException(
+                    "No appropriate platform found in manifest list"
+                )
+
+        # Save the result into our build data
+        self.build_data.source.setdefault(image.repo, {}).setdefault(image.tag, {})[
+            image.platform
+        ] = manifest_ref.ref
+        return dataclasses.replace(image, digest=manifest_ref.ref)
 
     async def resolve_base_images(
         self,
@@ -358,8 +409,10 @@ class TplBuild:
             if not isinstance(image, BaseImage):
                 return image
 
-            cached_content_hash = self.build_data.base.get(image.profile, {}).get(
-                image.stage
+            cached_content_hash = (
+                self.build_data.base.get(image.profile, {})
+                .get(image.stage, {})
+                .get(image.platform)
             )
 
             if dereference:

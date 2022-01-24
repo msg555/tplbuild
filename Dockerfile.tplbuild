@@ -7,11 +7,7 @@ WORKDIR /tplbuild
 COPY . ./
 
 # TODO: use setuptools instead of requirements files
-{% if env == "dev" %}
-  RUN pip install -r requirements.txt -r requirements-dev.txt
-{% else %}
-  RUN pip install -r requirements.txt
-{% endif %}
+RUN pip install -r requirements.txt {% if env == "dev" -%}-r requirements-dev.txt{%- endif %}
 
 
 {{ begin_stage("tplbuild", parent="tplbuild-base", tags=["tplbuild"]) }}

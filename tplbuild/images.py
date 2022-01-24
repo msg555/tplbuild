@@ -81,7 +81,7 @@ class SourceImage(ImageDefinition):
 
     repo: str
     tag: str
-    platform: str = ""
+    platform: str
     digest: Optional[str] = None
 
     def local_hash_data(self, symbolic: bool) -> Any:
@@ -91,7 +91,7 @@ class SourceImage(ImageDefinition):
         if self.digest is None:
             raise ValueError("Cannot full hash SourceImage with unresolved digest")
 
-        return [self.platform, self.digest]
+        return self.digest
 
 
 @dataclass(eq=False)
@@ -125,10 +125,7 @@ class BaseImage(ImageDefinition):
     Attributes:
         profile: Name of the profile this base image belongs to
         stage: Name of the build stage
-        platform: The platform to select for this base image. For platform
-            aware builds if platform is empty than this node represents the
-            multi platform manifest list itself. Platform unaware builds
-            should have this be empty.
+        platform: The platform to select for this base image.
         image: The build graph behind this base image. This can be None if
             the base image will not be dereferenced.
         content_hash: The conent hash of the base image. Typically this is
@@ -138,7 +135,7 @@ class BaseImage(ImageDefinition):
 
     profile: str
     stage: str
-    platform: str = ""
+    platform: str
     image: Optional[ImageDefinition] = None
     content_hash: Optional[str] = None
 
@@ -175,7 +172,7 @@ class BaseImage(ImageDefinition):
         if self.content_hash is None:
             raise ValueError("Cannot hash BaseImage with unresolved content hash")
 
-        return [self.content_hash, self.platform]
+        return self.content_hash
 
 
 @dataclass(eq=False)

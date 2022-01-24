@@ -1,6 +1,8 @@
 import argparse
+from typing import List
 
 from tplbuild.cmd.utility import CliUtility
+from tplbuild.render import StageData
 from tplbuild.tplbuild import TplBuild
 
 
@@ -19,9 +21,13 @@ class BaseBuildUtility(CliUtility):
         stage_mapping = tplbld.render_multi_platform()
 
         # Only build base image stages
-        stages_to_build = [
-            stage for stage in stage_mapping.values() if stage.base_image is not None
-        ]
+        stages_to_build: List[StageData] = []
+        for platform_stages in stage_mapping.values():
+            stages_to_build.extend(
+                stage
+                for stage in platform_stages.values()
+                if stage.base_image is not None
+            )
 
         # Resolve the locked source image manifest content address from cached
         # build data.

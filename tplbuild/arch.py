@@ -2,19 +2,6 @@ import platform
 from typing import Tuple
 
 
-def client_platform(osname: str = "linux"):
-    """
-    Return the appropriate platform string for the client. This will ignore
-    the local operating system and just use "linux" as the OS type as this
-    is typically what is wanted.
-    """
-    osname = "linux"
-    arch, variant = normalize_architecture(platform.machine(), "")
-    if variant:
-        return f"{osname}/{arch}/{variant}"
-    return f"{osname}/{arch}"
-
-
 def normalize_architecture(arch: str, variant: str) -> Tuple[str, str]:
     """
     Normalize the passed architecture and variant. This is copying the
@@ -41,3 +28,33 @@ def normalize_architecture(arch: str, variant: str) -> Tuple[str, str]:
             variant = f"v{variant}"
         return "arm", variant
     return arch, variant
+
+
+def normalize_platform(os: str, arch: str, variant: str = "") -> str:
+    """
+    Like :meth:`normalize_architecture` except include the `os` and return
+    the normalized platform string.
+    """
+    arch, variant = normalize_architecture(arch, variant)
+    if variant:
+        return f"{os}/{arch}/{variant}"
+    return f"{os}/{arch}"
+
+
+def normalize_platform_string(platform_str: str) -> str:
+    """
+    Normalize a platform string like 'linux/arm64/v8' into 'linux/arm64'.
+    """
+    parts = platform_str.split("/", maxsplit=2)
+    if len(parts) == 1:
+        return normalize_platform("linux", parts[0])
+    return normalize_platform(*parts)
+
+
+def client_platform(osname: str = "linux"):
+    """
+    Return the appropriate platform string for the client. This will ignore
+    the local operating system and just use "linux" as the OS type as this
+    is typically what is wanted.
+    """
+    return normalize_platform(osname, platform.machine(), "")
