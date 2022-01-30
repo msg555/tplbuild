@@ -7,6 +7,7 @@ from typing import Callable, Mapping
 from tplbuild.cmd.base_build import BaseBuildUtility
 from tplbuild.cmd.base_lookup import BaseLookupUtility
 from tplbuild.cmd.build import BuildUtility
+from tplbuild.cmd.publish import PublishUtility
 from tplbuild.cmd.utility import CliUtility
 from tplbuild.exceptions import TplBuildException
 from tplbuild.tplbuild import TplBuild
@@ -17,6 +18,7 @@ ALL_UTILITIES: Mapping[str, Callable[[], CliUtility]] = {
     "build": BuildUtility,
     "base-build": BaseBuildUtility,
     "base-lookup": BaseLookupUtility,
+    "publish": PublishUtility,
 }
 
 

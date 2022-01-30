@@ -23,7 +23,7 @@ class BaseBuildUtility(CliUtility):
         parser.add_argument(
             "--platform",
             action="append",
-            help="Platform to lookup the base image of. Defaults to current executor platform",
+            help="Platforms to build, may be specified multiple times. Defaults to all platforms",
         )
         parser.add_argument(
             "--check",
@@ -43,7 +43,7 @@ class BaseBuildUtility(CliUtility):
         stages_to_build: List[StageData] = []
         for profile in profiles:
             for platform in platforms:
-                stage_mapping = tplbld.render(profile=profile, platform=platform)
+                stage_mapping = await tplbld.render(profile=profile, platform=platform)
                 stages_to_build.extend(
                     stage_data
                     for stage_name, stage_data in stage_mapping.items()

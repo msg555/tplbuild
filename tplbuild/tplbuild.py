@@ -157,7 +157,7 @@ class TplBuild:
             **profile_data,
         }
 
-    def render(
+    async def render(
         self,
         *,
         profile: str = "",
@@ -171,6 +171,7 @@ class TplBuild:
             respective :class:`StageData`.
         """
         profile = profile or self.default_profile
+        platform = platform or await self.get_default_platform()
         return self.renderer.render(profile, self.get_render_context(profile), platform)
 
     def plan(

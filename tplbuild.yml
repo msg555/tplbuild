@@ -9,7 +9,7 @@ platforms:
   - linux/amd64
   - linux/arm64
 
-default_profile: release
+default_profile: dev
 profiles:
   dev:
     env: dev
