@@ -4,7 +4,7 @@ import functools
 import json
 import logging
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 from aioregistry import (
@@ -40,7 +40,9 @@ class TplBuild:
     """
 
     @classmethod
-    def from_path(cls, base_dir: str) -> "TplBuild":
+    def from_path(
+        cls, base_dir: str, *, registry_client: Optional[AsyncRegistryClient] = None
+    ) -> "TplBuild":
         """
         Create a TplBuild object from just the base directory. This will
         attempt to load a file named "tplbuild.yml" from within `base_dir`
@@ -60,23 +62,24 @@ class TplBuild:
             config = TplConfig()
         except (ValueError, TypeError) as exc:
             raise TplBuildException(f"Failed to load configuration: {exc}") from exc
-        return TplBuild(base_dir, config)
+        return TplBuild(base_dir, config, registry_client=registry_client)
 
     def __init__(
         self,
         base_dir: str,
         config: TplConfig,
         *,
-        registry_client: AsyncRegistryClient = None,
+        registry_client: Optional[AsyncRegistryClient] = None,
     ) -> None:
         self.base_dir = base_dir
         self.config = config
         self.planner = BuildPlanner()
         self.renderer = BuildRenderer(self.base_dir, self.config)
-        self.executor = BuildExecutor(
-            self.config.client, self.config.base_image_repo or ""
-        )
+        self.custom_client = bool(registry_client)
         self.registry_client = registry_client or AsyncRegistryClient()
+        self.executor = BuildExecutor(
+            self.config.client, self.config.base_image_repo or "", self.registry_client
+        )
         try:
             with open(
                 os.path.join(base_dir, ".tplbuilddata.json"), encoding="utf-8"
@@ -85,6 +88,13 @@ class TplBuild:
         except FileNotFoundError:
             LOGGER.warning(".tplbuilddata.json not found, using empty bulid data")
             self.build_data = BuildData()
+
+    async def __aenter__(self) -> "TplBuild":
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, exc_traceback) -> None:
+        if not self.custom_client:
+            await self.registry_client.__aexit__(exc_type, exc_value, exc_traceback)
 
     def lookup_base_image(
         self,
@@ -269,9 +279,12 @@ class TplBuild:
         # Grab the latest digest for the given source image.
         manifest_ref = parse_image_name(f"{image.repo}:{image.tag}")
         try:
-            manifest_ref = await self.registry_client.manifest_resolve_tag(manifest_ref)
+            descriptor = await self.registry_client.ref_lookup(manifest_ref)
+            if descriptor is None:
+                raise TplBuildException("Failed to lookup source image")
+            manifest_ref = manifest_ref.copy(update=dict(ref=descriptor.digest))
         except RegistryException as exc:
-            raise TplBuildException("Failed to resolve source image") from exc
+            raise TplBuildException("Failed to lookup source image") from exc
 
         # Download the manifest
         try:
@@ -443,20 +456,19 @@ class TplBuild:
         visit_graph((stage.image for stage in stages), _visit_image)
 
         # Resolve all images into self.build_data.source.
-        async with self.registry_client:
-            source_image_map = dict(
-                zip(
-                    source_images,
-                    await asyncio.gather(
-                        *(
-                            self.resolve_image(
-                                image, check_only=check_only, force_update=force_update
-                            )
-                            for image in source_images
+        source_image_map = dict(
+            zip(
+                source_images,
+                await asyncio.gather(
+                    *(
+                        self.resolve_image(
+                            image, check_only=check_only, force_update=force_update
                         )
-                    ),
-                )
+                        for image in source_images
+                    )
+                ),
             )
+        )
         self._save_build_data()
 
         # Swap out SourceImage for the resolved ExternalImages

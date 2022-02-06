@@ -15,6 +15,16 @@ from typing import (
     Optional,
 )
 
+from aioregistry import (
+    AsyncRegistryClient,
+    Descriptor,
+    ManifestListV2S2,
+    RegistryException,
+    RegistryManifestRef,
+    parse_image_name,
+)
+
+from .arch import split_platform
 from .config import ClientCommand, ClientConfig
 from .context import BuildContext
 from .exceptions import TplBuildException
@@ -131,9 +141,15 @@ class BuildExecutor:
     build commands.
     """
 
-    def __init__(self, client_config: ClientConfig, base_image_repo: str) -> None:
+    def __init__(
+        self,
+        client_config: ClientConfig,
+        base_image_repo: str,
+        registry_client: AsyncRegistryClient,
+    ) -> None:
         self.client_config = client_config
         self.base_image_repo = base_image_repo
+        self.registry_client = registry_client
         self.transient_prefix = "tplbuild"
 
         self.sem_build_jobs = asyncio.BoundedSemaphore(client_config.build_jobs)
@@ -155,6 +171,8 @@ class BuildExecutor:
                 should be listed after all of its dependencies).
             complete_callback: If present this callback will be invoked for each
                 build operation as `complete_callback(build_op, primary_tag)`.
+                Note for multi platform images the 'primary_tag' will just be the
+                first push tag.
         """
         transient_images: List[str] = []
         image_tag_map: Dict[ImageDefinition, str] = {}
@@ -173,34 +191,36 @@ class BuildExecutor:
                 for tag in stage.push_tags:
                     tags[tag] = True
 
-            if tags:
-                primary_tag = next(iter(tags))
-            else:
-                primary_tag = f"{self.transient_prefix}-{uuid.uuid4()}"
-
             # Wait for dependencies to finish
             for dep in build_op.dependencies:
                 await build_tasks[dep]
 
-            if isinstance(build_op.image, ContextImage):
-                await self._build_context(primary_tag, build_op.image)
-            elif isinstance(build_op.image, MultiPlatformImage):
-                await self._push_manifest(primary_tag, build_op.image, image_tag_map)
+            if isinstance(build_op.image, MultiPlatformImage):
+                primary_tag = ""
+                await self._build_multi_platform(build_op.image, tags, image_tag_map)
             else:
-                await self._build_work(primary_tag, build_op, image_tag_map)
+                if tags:
+                    primary_tag = next(iter(tags))
+                else:
+                    primary_tag = f"{self.transient_prefix}-{uuid.uuid4()}"
 
-            if not tags:
-                transient_images.append(primary_tag)
+                if isinstance(build_op.image, ContextImage):
+                    await self._build_context(primary_tag, build_op.image)
+                else:
+                    await self._build_work(primary_tag, build_op, image_tag_map)
 
-            image_tag_map[build_op.image] = primary_tag
+                if not tags:
+                    transient_images.append(primary_tag)
 
-            for tag, push in tags.items():
-                if tag != primary_tag:
-                    await self.tag_image(primary_tag, tag)
-                if push:
-                    # TODO: Local build dependants should be able to
-                    #       progress while we're pushing.
-                    await self.push_image(tag)
+                image_tag_map[build_op.image] = primary_tag
+
+                for tag, push in tags.items():
+                    if tag != primary_tag:
+                        await self.tag_image(primary_tag, tag)
+                    if push:
+                        # TODO: Local build dependants should be able to
+                        #       progress while we're pushing.
+                        await self.push_image(tag)
 
             if complete_callback:
                 complete_callback(build_op, primary_tag)
@@ -228,6 +248,68 @@ class BuildExecutor:
                     if isinstance(exc, BaseException):
                         raise exc
 
+    async def _build_multi_platform(
+        self,
+        image: MultiPlatformImage,
+        tags: Dict[str, bool],
+        image_tag_map: Dict[ImageDefinition, str],
+    ) -> None:
+        """
+        Push a multi-architecture image with the given tags. All tags
+        must be push tags for this kind of node.
+        """
+        if not all(push for push in tags.values()):
+            raise TplBuildException("Multi platform images only support push tags")
+
+        async def push_sub_image(
+            image_ref: RegistryManifestRef,
+            platform: str,
+            sub_image: ImageDefinition,
+        ) -> Descriptor:
+            sub_image_ref = image_ref.copy(
+                update=dict(ref=f"{image_ref.ref}-{platform.replace('/', '-')}")
+            )
+            sub_image_tag = image_tag_map[sub_image]
+            await self.tag_image(sub_image_tag, str(sub_image_ref))
+            await self.push_image(str(sub_image_ref))
+            try:
+                desc = await self.registry_client.ref_lookup(sub_image_ref)
+            except RegistryException as exc:
+                raise TplBuildException("Failed to look up image digest") from exc
+            if desc is None:
+                raise TplBuildException("Could not look up pushed image on registry")
+            return desc
+
+        for tag in tags:
+            image_ref = parse_image_name(tag)
+            sub_descriptors = await asyncio.gather(
+                *(
+                    push_sub_image(image_ref, platform, sub_image)
+                    for platform, sub_image in image.images.items()
+                )
+            )
+            sub_manifest_items = []
+            for platform, sub_descriptor in zip(image.images, sub_descriptors):
+                image_os, architecture, variant = split_platform(platform)
+                sub_manifest_items.append(
+                    dict(
+                        platform=dict(
+                            architecture=architecture,
+                            os=image_os,
+                            variant=variant,
+                        ),
+                        **sub_descriptor.dict(by_alias=True),
+                    )
+                )
+
+            manifest = ManifestListV2S2(
+                schemaVersion=2,
+                mediaType="application/vnd.docker.distribution.manifest.list.v2+json",
+                manifests=sub_manifest_items,
+            )
+            await self.registry_client.manifest_write(image_ref, manifest)
+            print(f"Wrote multi architecture platform {image_ref}")
+
     async def _build_context(self, tag: str, image: ContextImage) -> None:
         """
         Perform a build operation where the image is an ImageContext.
@@ -238,18 +320,6 @@ class BuildExecutor:
             b"FROM scratch\nCOPY . /\n",
             image.context,
         )
-
-    async def _push_manifest(
-        self,
-        tag: str,
-        image: MultiPlatformImage,
-        image_tag_map: Dict[ImageDefinition, str],
-    ) -> None:
-        """
-        Push a manifest to the requested registry.
-        """
-        # pylint: disable=unused-argument
-        print("BUILD MANIFEST PLEASE!")
 
     async def _build_work(
         self,

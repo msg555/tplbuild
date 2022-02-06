@@ -1,8 +1,13 @@
 import argparse
 import asyncio
+import json
 import logging
+import os
+import ssl
 import sys
 from typing import Callable, Mapping
+
+from aioregistry import AsyncRegistryClient, DockerCredentialStore
 
 from tplbuild.cmd.base_build import BaseBuildUtility
 from tplbuild.cmd.base_lookup import BaseLookupUtility
@@ -31,6 +36,39 @@ def setup_parser(
         "-v",
         action="count",
         default=0,
+    )
+    parser.add_argument(
+        "-C",
+        "--base-dir",
+        required=False,
+        default=".",
+        help="Base directory for tplbuild",
+    )
+    parser.add_argument(
+        "--auth-config",
+        required=False,
+        default=os.path.expanduser("~/.docker/config.json"),
+        help="Path to Docker credential config file",
+    )
+    parser.add_argument(
+        "--insecure",
+        required=False,
+        const=True,
+        action="store_const",
+        default=False,
+        help="Disable server certificate verification",
+    )
+    parser.add_argument(
+        "--cafile",
+        required=False,
+        default=None,
+        help="SSL context CA file",
+    )
+    parser.add_argument(
+        "--capath",
+        required=False,
+        default=None,
+        help="SSL context CA directory",
     )
 
     subparsers = parser.add_subparsers(
@@ -69,10 +107,27 @@ def setup_logging(verbose: int) -> None:
     )
 
 
-def create_tplbld(args) -> TplBuild:
+def create_registry_client(args) -> AsyncRegistryClient:
+    """Create an AsyncRegistryClient context from the passed arguments."""
+    creds = None
+    if args.auth_config:
+        with open(args.auth_config, "r", encoding="locale") as fauth:
+            creds = DockerCredentialStore(json.load(fauth))
+
+    ssl_ctx = ssl.create_default_context(
+        cafile=args.cafile,
+        capath=args.capath,
+    )
+    if args.insecure:
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    return AsyncRegistryClient(creds=creds, ssl_context=ssl_ctx)
+
+
+def create_tplbld(args, registry_client: AsyncRegistryClient) -> TplBuild:
     """Create a TplBuild context from the passed arguments."""
-    # pylint: disable=unused-argument
-    return TplBuild.from_path(".")
+    return TplBuild.from_path(args.base_dir, registry_client=registry_client)
 
 
 async def main() -> int:
@@ -88,10 +143,9 @@ async def main() -> int:
     setup_logging(args.verbose)
 
     try:
-        return await utilities[args.utility].main(
-            args,
-            create_tplbld(args),
-        )
+        async with create_registry_client(args) as registry_client:
+            async with create_tplbld(args, registry_client) as tplbld:
+                return await utilities[args.utility].main(args, tplbld)
     except TplBuildException as exc:
         sys.stderr.write(f"{exc}\n")
         if exc.more_message:

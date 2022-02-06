@@ -41,6 +41,18 @@ def normalize_platform(os: str, arch: str, variant: str = "") -> str:
     return f"{os}/{arch}"
 
 
+def split_platform(platfrm: str) -> Tuple[str, str, str]:
+    """
+    Split a platform string into its (os, architecture, variant) form.
+    """
+    parts = platfrm.split("/", maxsplit=2)
+    return (
+        parts[0],
+        parts[1] if len(parts) > 1 else "",
+        parts[2] if len(parts) > 2 else "",
+    )
+
+
 def normalize_platform_string(platform_str: str) -> str:
     """
     Normalize a platform string like 'linux/arm64/v8' into 'linux/arm64'.
