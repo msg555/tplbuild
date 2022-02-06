@@ -111,7 +111,7 @@ def create_registry_client(args) -> AsyncRegistryClient:
     """Create an AsyncRegistryClient context from the passed arguments."""
     creds = None
     if args.auth_config:
-        with open(args.auth_config, "r", encoding="locale") as fauth:
+        with open(args.auth_config, "r", encoding="utf-8") as fauth:
             creds = DockerCredentialStore(json.load(fauth))
 
     ssl_ctx = ssl.create_default_context(
