@@ -1,5 +1,6 @@
 .PHONY: format format-check pylint typecheck lint test docs build pypy-test pypy-live
 PYTHON := python3
+PLATFORM := linux/amd64
 
 all: format lint test docs
 
@@ -38,3 +39,6 @@ pypi-test: build
 pypi-live: build
 	TWINE_USERNAME=__token__ TWINE_PASSWORD="$(shell gpg -d live.pypi-token.gpg)" \
     $(PYTHON) -m twine upload dist/*
+
+docker-%:
+	docker run --rm -v "${PWD}:/work" -w /work "$$(./bootstrap.sh base-lookup tplbuild-base)" make $*

@@ -1,0 +1,36 @@
+{
+  "source": {
+    "ubuntu": {
+      "20.04": {
+        "linux/amd64": "sha256:7c9c7fed23def3653a0da5bc9ecb651efe155ebd5802c7ba5d585edaa6c89496",
+        "linux/arm64": "sha256:13572ca2bcc043618c2c2ab6ee7dda8ede63ff782a604f58e69c6e7dac62b626"
+      }
+    },
+    "python": {
+      "3.10": {
+        "linux/arm64": "sha256:519ebab04ddad30a20a1f0d4a90f52bcf26990a91cbb5afe63b80f1a10ef58cf",
+        "linux/amd64": "sha256:cd150f52893e2abc5aa03792e872c6ab584402340865842f6e0403b8027a4a46"
+      }
+    },
+    "docker": {
+      "dind": {
+        "linux/amd64": "sha256:d848d730231a7e8303e538515251f95cfb6ce86ea7385c9d1bfae7cfd7eff179",
+        "linux/arm64": "sha256:af0ce9eee4461072754e6f35f18c219ca6981a16c0042c92bbb4823ce753faa2"
+      }
+    }
+  },
+  "base": {
+    "dev": {
+      "tplbuild-base": {
+        "linux/amd64": "8ddf334f88284b16a47c2fb25939c451384da6a55ce2ae28ca919251583fd4c5",
+        "linux/arm64": "53f7fafbcb66352443bf5ad315d0a2e0998f2c6567e516babbca215d2729158d"
+      }
+    },
+    "release": {
+      "tplbuild-base": {
+        "linux/arm64": "418b514f1d59942c5c7e78cc119a1bf6f46804b1ccaaf50906923eb40a88b5cf",
+        "linux/amd64": "404b62f4610eba7f9be0dcf94472ce4c83ff1db62ce8ceff6296da12b3ac0129"
+      }
+    }
+  }
+}

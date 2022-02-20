@@ -10,16 +10,9 @@ COPY . ./
 RUN pip install -r requirements.txt {% if env == "dev" -%}-r requirements-dev.txt{%- endif %}
 
 
-{{ begin_stage("tplbuild", parent="tplbuild-base", tags=["tplbuild"], push_tags=["msg555/test-image"]) }}
+{{ begin_stage("tplbuild", parent="tplbuild-base", tags=["msg555/tplbuild"], push_tags=["msg555/tplbuild"]) }}
 
 COPY . ./
 
 ENV PYTHONPATH="${PYTHONPATH}:/tplbuild"
-ENTRYPOINT ["python3", "-m", "tplbuild"]
-
-{{ begin_stage("nicestuff", parent="tplbuild-base", tags=["nice"]) }}
-
-COPY . ./
-
-ENV PYTHONPATH=wowow
 ENTRYPOINT ["python3", "-m", "tplbuild"]
