@@ -2,6 +2,7 @@ import argparse
 from typing import List
 
 from tplbuild.cmd.utility import CliUtility
+from tplbuild.exceptions import TplBuildException
 from tplbuild.render import StageData
 from tplbuild.tplbuild import TplBuild
 
@@ -24,6 +25,13 @@ class BaseBuildUtility(CliUtility):
             "--platform",
             action="append",
             help="Platforms to build, may be specified multiple times. Defaults to all platforms",
+        )
+        parser.add_argument(
+            "--update-sources",
+            default=False,
+            const=True,
+            action="store_const",
+            help="If set the digest for each source image will be updated",
         )
         parser.add_argument(
             "--check",
@@ -51,9 +59,16 @@ class BaseBuildUtility(CliUtility):
                     and (not images or stage_name in images)
                 )
 
+        if args.check and args.update_sources:
+            raise TplBuildException("Cannot pass --check and --update-sources")
+
         # Resolve the locked source image manifest content address from cached
         # build data.
-        await tplbld.resolve_source_images(stages_to_build, check_only=args.check)
+        await tplbld.resolve_source_images(
+            stages_to_build,
+            check_only=args.check,
+            force_update=args.update_sources,
+        )
 
         # Replace BaseImage nodes in the build graph with their underlying
         # build definition.

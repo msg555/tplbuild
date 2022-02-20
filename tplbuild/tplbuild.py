@@ -19,7 +19,7 @@ from aioregistry import (
 
 from .arch import client_platform, normalize_platform, normalize_platform_string
 from .config import BuildData, TplConfig
-from .exceptions import TplBuildException
+from .exceptions import TplBuildException, TplBuildNoSourceImageException
 from .executor import BuildExecutor
 from .graph import hash_graph, visit_graph
 from .images import BaseImage, ImageDefinition, SourceImage
@@ -236,7 +236,7 @@ class TplBuild:
 
                 # Save base images as soon as their done in case the build
                 # is later interrupted.
-                self._save_build_data()
+                self.save_build_data()
 
         await self.executor.build(build_ops, complete_callback=complete_callback)
 
@@ -274,7 +274,9 @@ class TplBuild:
             return dataclasses.replace(image, digest=source_digest)
 
         if check_only:
-            raise TplBuildException("Source image does not exist, check only")
+            raise TplBuildNoSourceImageException(
+                "Source image does not exist, check only"
+            )
 
         # Grab the latest digest for the given source image.
         manifest_ref = parse_image_name(f"{image.repo}:{image.tag}")
@@ -469,7 +471,7 @@ class TplBuild:
                 ),
             )
         )
-        self._save_build_data()
+        self.save_build_data()
 
         # Swap out SourceImage for the resolved ExternalImages
         def _replace_source_image(image: ImageDefinition) -> ImageDefinition:
@@ -481,7 +483,7 @@ class TplBuild:
         for stage, image in zip(stages, images):
             stage.image = image
 
-    def _save_build_data(self):
+    def save_build_data(self):
         """
         Save build data to disk.
         """

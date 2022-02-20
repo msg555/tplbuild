@@ -18,3 +18,9 @@ class TplBuildContextException(TplBuildException):
     """
     Exception during processing of build context data.
     """
+
+
+class TplBuildNoSourceImageException(TplBuildException):
+    """
+    Exception raised when a source image lookup fails with check_only=True.
+    """

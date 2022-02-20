@@ -13,6 +13,8 @@ from tplbuild.cmd.base_build import BaseBuildUtility
 from tplbuild.cmd.base_lookup import BaseLookupUtility
 from tplbuild.cmd.build import BuildUtility
 from tplbuild.cmd.publish import PublishUtility
+from tplbuild.cmd.source_lookup import SourceLookupUtility
+from tplbuild.cmd.source_update import SourceUpdateUtility
 from tplbuild.cmd.utility import CliUtility
 from tplbuild.exceptions import TplBuildException
 from tplbuild.tplbuild import TplBuild
@@ -24,6 +26,8 @@ ALL_UTILITIES: Mapping[str, Callable[[], CliUtility]] = {
     "base-build": BaseBuildUtility,
     "base-lookup": BaseLookupUtility,
     "publish": PublishUtility,
+    "source-lookup": SourceLookupUtility,
+    "source-update": SourceUpdateUtility,
 }
 
 
