@@ -10,6 +10,10 @@
       "3.10": {
         "linux/arm64": "sha256:519ebab04ddad30a20a1f0d4a90f52bcf26990a91cbb5afe63b80f1a10ef58cf",
         "linux/amd64": "sha256:cd150f52893e2abc5aa03792e872c6ab584402340865842f6e0403b8027a4a46"
+      },
+      "3.8": {
+        "linux/amd64": "sha256:7f39c108e0077de5b235cb7ace3f2b78c6c49a69d5651da40674e9b46d255bba",
+        "linux/arm64": "sha256:3b2ed94c522ed63327af3f8d8f66b92687cf43cd1606a1b69610737fc7a7c457"
       }
     },
     "docker": {
@@ -22,14 +26,14 @@
   "base": {
     "dev": {
       "tplbuild-base": {
-        "linux/amd64": "8ddf334f88284b16a47c2fb25939c451384da6a55ce2ae28ca919251583fd4c5",
-        "linux/arm64": "53f7fafbcb66352443bf5ad315d0a2e0998f2c6567e516babbca215d2729158d"
+        "linux/amd64": "a75ad8733079e3c52a8693d2957dec9009629273bc4ff58a21547442e38ab84f",
+        "linux/arm64": "7516fcd688996e8a9fa57df2db45d2126e1782930a156d9fdf8334c172cdbf60"
       }
     },
     "release": {
       "tplbuild-base": {
-        "linux/arm64": "418b514f1d59942c5c7e78cc119a1bf6f46804b1ccaaf50906923eb40a88b5cf",
-        "linux/amd64": "404b62f4610eba7f9be0dcf94472ce4c83ff1db62ce8ceff6296da12b3ac0129"
+        "linux/arm64": "22d78c299782f1d1804820eca1e589e28506cac6051abe59e7fee1b59eada271",
+        "linux/amd64": "200c083de09510373054cb5478c9a66667f8a54bb4fe430eef245fa4936230e4"
       }
     }
   }

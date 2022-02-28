@@ -1,4 +1,4 @@
-{{ begin_stage("tplbuild-base", parent=("python", "3.10"), context="base", base=True) }}
+{{ begin_stage("tplbuild-base", parent=("python", "3.8"), context="base", base=True) }}
 
 COPY --from=["docker", "dind"] /usr/local/bin/docker /bin/
 
