@@ -31,4 +31,4 @@ jobs:
         DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
       run: |
         docker login -u "${DOCKER_REGISTRY_USERNAME}" -p "${DOCKER_REGISTRY_PASSWORD}"
-        ./bootstrap.sh publish
+        ./bootstrap.sh publish --profile release

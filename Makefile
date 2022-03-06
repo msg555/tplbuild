@@ -41,4 +41,4 @@ pypi-live: build
     $(PYTHON) -m twine upload dist/*
 
 docker-%:
-	docker run --rm -v "${PWD}:/work" -w /work "$$(./bootstrap.sh base-lookup tplbuild-base)" make $*
+	docker run --rm -v "${PWD}:/work" -w /work "$$(./bootstrap.sh base-lookup base-tplbuild)" make $*
