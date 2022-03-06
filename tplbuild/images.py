@@ -2,8 +2,8 @@ import abc
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
+from .config import StageConfig
 from .context import BuildContext
-from .utils import format_simple
 
 
 class ImageDefinition(metaclass=abc.ABCMeta):
@@ -146,25 +146,6 @@ class BaseImage(ImageDefinition):
         if deps:
             (self.image,) = deps
 
-    def get_image_name(self, base_image_repo: str) -> str:
-        """
-        Return the appropriate image name given the passed base_image_repo format.
-        `base_image_repo` will be formatted with the keyword arguments `profile`,
-        set to the name of the profile this base image was rendered from, and
-        `stage`, set to the name of the stage of this base image.
-        """
-        if self.content_hash is None:
-            raise ValueError("Cannot get image name of base image with no content hash")
-
-        return (
-            format_simple(
-                base_image_repo,
-                profile=self.profile,
-                stage=self.stage,
-            )
-            + f":{self.content_hash}"
-        )
-
     def local_hash_data(self, symbolic: bool) -> Any:
         if symbolic:
             return [self.profile, self.stage, self.platform]
@@ -183,3 +164,20 @@ class ContextImage(ImageDefinition):
 
     def local_hash_data(self, symbolic: bool) -> str:
         return self.context.symbolic_hash if symbolic else self.context.full_hash
+
+
+@dataclass
+class StageData:
+    """
+    Dataclass holding metadata about a rendered image stage.
+    """
+
+    #: The name of the build stage
+    name: str
+    #: The image definition
+    image: ImageDefinition
+    #: The stage config
+    config: StageConfig
+    #: If this is a base image this will be set as the appropriate base
+    #: image reference.
+    base_image: Optional[BaseImage] = None

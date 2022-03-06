@@ -1,12 +1,10 @@
 import dataclasses
-import json
 import os
-import sys
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
-import jinja2
+from aioregistry import parse_image_name
 
-from .config import TplConfig, TplContextConfig
+from .config import StageConfig, TplContextConfig
 from .context import BuildContext
 from .exceptions import TplBuildException, TplBuildTemplateException
 from .graph import visit_graph
@@ -17,55 +15,12 @@ from .images import (
     CopyCommandImage,
     ImageDefinition,
     SourceImage,
+    StageData,
 )
-from .utils import json_decode, json_encode, json_raw_decode, line_reader
+from .tplbuild import TplBuild
+from .utils import line_reader
 
 RESERVED_STAGE_NAMES = {"scratch"}
-
-ImageDescriptor = Union[str, Tuple[str, str]]
-
-
-def extract_jinja_frames(exc_tb) -> str:
-    """
-    Extract all the frames in the traceback that look like jinja frames
-
-    Returns:
-        A multiline string with a formatted traceback of all the Jinja
-        synthetic frames or an empty string if none were found.
-    """
-    lines = []
-    while exc_tb:
-        code = exc_tb.tb_frame.f_code
-        if (
-            code.co_name
-            in (
-                "template",
-                "top-level template code",
-            )
-            or code.co_name.startswith("block ")
-        ):
-            lines.append(f"  at {code.co_filename}:{exc_tb.tb_lineno}")
-        exc_tb = exc_tb.tb_next
-    return "\n".join(lines)
-
-
-@dataclasses.dataclass
-class StageData:
-    """
-    Dataclass holding metadata about a rendered image stage.
-    """
-
-    #: The name of the build stage
-    name: str
-    #: The image definition
-    image: ImageDefinition
-    #: Tags to apply tothe built image
-    tags: Tuple[str, ...] = ()
-    #: Tags to push for the built image
-    push_tags: Tuple[str, ...] = ()
-    #: If this is a base image this will be set as the appropriate base
-    #: image reference.
-    base_image: Optional[BaseImage] = None
 
 
 @dataclasses.dataclass(eq=False)
@@ -76,7 +31,7 @@ class _LateImageReference(ImageDefinition):
     any image graph data.
     """
 
-    image_desc: ImageDescriptor
+    image_name: str
 
     def local_hash_data(self, symbolic: bool) -> str:
         raise NotImplementedError(
@@ -84,341 +39,250 @@ class _LateImageReference(ImageDefinition):
         )
 
 
-class BuildRenderer:
+def _render_context(
+    tplbld: TplBuild,
+    context_name: str,
+    context_config: TplContextConfig,
+    profile_data: Dict[str, Any],
+    platform: str,
+) -> ContextImage:
     """
-    Class responsible for rendering the build into its graph representation.
-    This is responsible both for rendering templates and parsing the rendered
-    build files into the build graph.
+    Renders a context config into a ContextImage graph representation.
     """
-
-    def __init__(self, base_dir: str, config: TplConfig) -> None:
-        self.base_dir = base_dir
-        self.config = config
-        self.jinja_env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(self.base_dir),
+    if context_name in RESERVED_STAGE_NAMES:
+        raise TplBuildException(
+            f"Cannot name context {repr(context_name)}, name is reserved"
         )
 
-    def _render_context(
-        self,
-        context_name: str,
-        context_config: TplContextConfig,
-        profile_data: Dict[str, Any],
-        platform: str,
-    ) -> ContextImage:
+    ignore_data = context_config.ignore
+    if ignore_data is None:
+        ignore_file = context_config.ignore_file or ".dockerignore"
+        try:
+            with open(
+                os.path.join(tplbld.base_dir, ignore_file), encoding="utf-8"
+            ) as fign:
+                ignore_data = fign.read()
+        except FileNotFoundError as exc:
+            if context_config.ignore_file is not None:
+                raise TplBuildException(
+                    f"Missing ignore file {repr(context_config.ignore_file)}"
+                ) from exc
+            ignore_data = ""
+
+    try:
+        ignore_data = tplbld.jinja_render(
+            ignore_data,
+            dict(
+                platform=platform,
+                **profile_data,
+            ),
+            file_env=True,
+        )
+    except TplBuildTemplateException as exc:
+        exc.update_message(
+            f"Failed to render ignore context for {repr(context_name)}: {exc}"
+        )
+        raise
+
+    return ContextImage(
+        context=BuildContext(
+            context_config.base_dir,
+            None if context_config.umask is None else int(context_config.umask, 8),
+            ignore_data.split("\n"),
+        )
+    )
+
+
+def _resolve_late_references(stages: Dict[str, StageData], platform: str) -> None:
+    """
+    Update all the images in `stages` to remove any _LateImageReference
+    objects and replace them with the proper image.
+    """
+
+    def _visit(image: ImageDefinition) -> ImageDefinition:
         """
-        Renders a context config into a ContextImage graph representation.
+        If visiting a late image reference replace it with the proper
+        stage image or source image.
         """
-        if context_name in RESERVED_STAGE_NAMES:
+        if not isinstance(image, _LateImageReference):
+            return image
+
+        stage = stages.get(image.image_name)
+        if stage is not None:
+            return stage.base_image or stage.image
+
+        try:
+            image_ref = parse_image_name(image.image_name)
+        except ValueError as exc:
             raise TplBuildException(
-                f"Cannot name context {repr(context_name)}, name is reserved"
-            )
-
-        ignore_data = context_config.ignore
-        if ignore_data is None:
-            ignore_file = context_config.ignore_file or ".dockerignore"
-            try:
-                with open(
-                    os.path.join(self.base_dir, ignore_file), encoding="utf-8"
-                ) as fign:
-                    ignore_data = fign.read()
-            except FileNotFoundError as exc:
-                if context_config.ignore_file is not None:
-                    raise TplBuildException(
-                        f"Missing ignore file {repr(context_config.ignore_file)}"
-                    ) from exc
-                ignore_data = ""
-
-        try:
-            ignore_data = self.jinja_env.from_string(ignore_data).render(
-                platform=platform,
-                **profile_data,
-            )
-        except jinja2.TemplateError as exc:
-            raise TplBuildTemplateException(
-                f"Failed to render ignore context for {repr(context_name)}: {exc}",
-                more_message=extract_jinja_frames(sys.exc_info()[2]),
+                f"Malformed image name {repr(image.image_name)}"
             ) from exc
 
-        return ContextImage(
-            context=BuildContext(
-                context_config.base_dir,
-                None if context_config.umask is None else int(context_config.umask, 8),
-                ignore_data.split("\n"),
-            )
+        repo_name = "/".join(image_ref.repo)
+        if image_ref.registry:
+            repo_name = f"{image_ref.registry}/{repo_name}"
+        return SourceImage(
+            repo=repo_name,
+            tag=image_ref.ref,
+            platform=platform,
         )
 
-    def _resolve_late_references(
-        self, stages: Dict[str, StageData], platform: str
-    ) -> None:
-        """
-        Update all the images in `stages` to remove any _LateImageReference
-        objects and replace them with the proper image.
-        """
+    stage_images = visit_graph(
+        (stage_data.image for stage_data in stages.values()),
+        _visit,
+    )
+    for stage_data, stage_image in zip(stages.values(), stage_images):
+        stage_data.image = stage_image
 
-        def _visit(image: ImageDefinition) -> ImageDefinition:
-            """
-            If visiting a late image reference replace it with the proper
-            stage image or source image.
-            """
-            if not isinstance(image, _LateImageReference):
-                return image
 
-            desc = image.image_desc
-            if isinstance(desc, str):
-                stage = stages.get(desc)
-                if stage is None:
-                    raise TplBuildException(
-                        f"Cannot resolve image reference to {repr(desc)}"
-                    )
-
-                return stage.base_image or stage.image
-
-            if isinstance(desc, list) and len(desc) == 2:
-                return SourceImage(
-                    repo=desc[0],
-                    tag=desc[1],
-                    platform=platform,
-                )
-
-            raise TplBuildException(f"Malformed image desc {repr(desc)}")
-
-        stage_images = visit_graph(
-            (stage_data.image for stage_data in stages.values()),
-            _visit,
+def render(
+    tplbld: TplBuild, profile: str, profile_data: Dict[str, Any], platform: str
+) -> Dict[str, StageData]:
+    """
+    Renders all build contexts and stages into its graph representation.
+    """
+    result = {
+        context_name: StageData(
+            name=context_name,
+            image=_render_context(
+                tplbld, context_name, context_config, profile_data, platform
+            ),
+            config=StageConfig(),
         )
-        for stage_data, stage_image in zip(stages.values(), stage_images):
-            stage_data.image = stage_image
+        for context_name, context_config in tplbld.config.contexts.items()
+    }
 
-    def render(
-        self, profile: str, profile_data: Dict[str, Any], platform: str
-    ) -> Dict[str, StageData]:
-        """
-        Renders all build contexts and stages into its graph representation.
-        """
-        # pylint: disable=no-self-use
-        result = {
-            context_name: StageData(
-                name=context_name,
-                image=self._render_context(
-                    context_name, context_config, profile_data, platform
-                ),
-            )
-            for context_name, context_config in self.config.contexts.items()
-        }
+    # Determine the default context as either the context named "default"
+    # or the first context listed. If there are no contexts default_context
+    # will just be None.
+    default_context = None
+    if "default" in result:
+        default_context = result["default"].image
+    elif result:
+        default_context = next(iter(result.values())).image
 
-        # Determine the default context as either the context named "default"
-        # or the first context listed. If there are no contexts default_context
-        # will just be None.
-        default_context = None
-        if "default" in result:
-            default_context = result["default"].image
-        elif result:
-            default_context = next(iter(result.values())).image
-
-        def _begin_stage(
-            stage_name: str,
-            parent: ImageDescriptor,
-            *,
-            context: Optional[str] = None,
-            base: bool = False,
-            tags: Iterable[str] = (),
-            push_tags: Iterable[str] = (),
-        ):
-            metadata = {
-                "context": context,
-                "base": base,
-                "tags": tags,
-                "push_tags": push_tags,
-            }
-            metadata = {key: val for key, val in metadata.items() if val}
-            return (
-                f"TPLFROM {json_encode({'parent': parent, 'name': stage_name})}\n"
-                f"METADATA {json_encode(metadata)}\n"
-            )
-
-        try:
-            dockerfile_data = self.jinja_env.get_template("Dockerfile.tplbuild").render(
-                begin_stage=_begin_stage,
+    try:
+        dockerfile_data = tplbld.jinja_render(
+            "Dockerfile.tplbuild",
+            dict(
                 platform=platform,
                 **profile_data,
-            )
-        except jinja2.TemplateError as exc:
-            raise TplBuildTemplateException(
-                f"Failed to render build file: {type(exc)}",
-                more_message=extract_jinja_frames(sys.exc_info()[2]),
-            ) from exc
+            ),
+            file_template=True,
+            file_env=True,
+        )
+    except TplBuildTemplateException as exc:
+        exc.update_message(f"Failed to render build file: {type(exc)}")
+        raise
 
-        @dataclasses.dataclass
-        class ActiveImage:
-            """
-            Tracks metadata on an active image in the image stack.
-            """
+    @dataclasses.dataclass
+    class ActiveImage:
+        """
+        Tracks metadata on an active image in the image stack.
+        """
 
-            name: str
-            image: ImageDefinition
-            contexts: List[Optional[ImageDefinition]] = dataclasses.field(
-                default_factory=lambda: [default_context]
-            )
+        name: str
+        image: ImageDefinition
+        contexts: List[Optional[ImageDefinition]] = dataclasses.field(
+            default_factory=lambda: [default_context]
+        )
 
-        image_stack: List[ActiveImage] = []
-        image_metadata: Dict[str, Dict[str, Any]] = {}
+    image_stack: List[ActiveImage] = []
 
-        def _pop_image_stack():
-            """
-            Pop the image on the top of the stack and add the stage data to the
-            result.
-            """
-            img = image_stack.pop()
-            if img.name in result:
-                raise TplBuildException(f"Duplicate stage names {repr(img.name)}")
+    def _pop_image_stack():
+        """
+        Pop the image on the top of the stack and add the stage data to the
+        result.
+        """
+        img = image_stack.pop()
+        if img.name in result:
+            raise TplBuildException(f"Duplicate stage names {repr(img.name)}")
 
-            metadata = image_metadata.get(img.name, {})
-            stage_data = StageData(
-                name=img.name,
+        stage_data = StageData(
+            name=img.name,
+            image=img.image,
+            config=tplbld.get_stage_config(img.name, profile, platform),
+        )
+        if stage_data.config.base:
+            stage_data.base_image = BaseImage(
+                profile=profile,
+                stage=img.name,
+                platform=platform,
                 image=img.image,
-                tags=tuple(metadata.get("tags", [])),
-                push_tags=tuple(metadata.get("push_tags", [])),
             )
-            if metadata.get("base"):
-                stage_data.base_image = BaseImage(
-                    profile=profile,
-                    stage=img.name,
-                    platform=platform,
-                    image=img.image,
+        result[img.name] = stage_data
+
+    for line_num, line in line_reader(dockerfile_data):
+        line_parts = line.split(maxsplit=1)
+        cmd = line_parts[0].upper()
+        line = line_parts[1] if len(line_parts) > 1 else ""
+
+        if cmd == "FROM":
+            line_parts = line.split()
+            if len(line_parts) == 1:
+                raise TplBuildException(
+                    f"{line_num}: FROM without a stage name not supported"
                 )
-            result[img.name] = stage_data
-
-        for line_num, line in line_reader(dockerfile_data):
-            line_parts = line.split(maxsplit=1)
-            cmd = line_parts[0].upper()
-            line = line_parts[1] if len(line_parts) > 1 else ""
-
-            if cmd == "FROM":
-                line_parts = line.split()
-                if len(line_parts) == 1:
-                    raise TplBuildException(
-                        f"{line_num}: FROM without a stage name not supported"
-                    )
-                if len(line_parts) != 3 or line_parts[1].upper() != "AS":
-                    raise TplBuildException(
-                        f"{line_num}: Expected FROM parent AS stage_name"
-                    )
-                image_stack.append(
-                    ActiveImage(
-                        image=_LateImageReference(line_parts[0]),
-                        name=line_parts[2],
-                    )
+            if len(line_parts) != 3 or line_parts[1].upper() != "AS":
+                raise TplBuildException(
+                    f"{line_num}: Expected 'FROM parent AS stage_name'"
                 )
-            elif cmd == "TPLFROM":
-                try:
-                    from_image_desc = json_decode(line)
-                except json.JSONDecodeError as exc:
-                    raise TplBuildException(
-                        f"{line_num}: Failed to parse TPLFROM data"
-                    ) from exc
-
-                image_stack.append(
-                    ActiveImage(
-                        image=_LateImageReference(from_image_desc["parent"]),
-                        name=from_image_desc["name"],
-                    )
+            image_stack.append(
+                ActiveImage(
+                    image=_LateImageReference(line_parts[0]),
+                    name=line_parts[2],
                 )
-            elif cmd == "END":
-                if line:
-                    raise TplBuildException(
-                        f"{line_num}: Unexpected extra data after END command"
-                    )
-                _pop_image_stack()
-            elif cmd in ("RUN", "ENTRYPOINT", "COMMAND", "WORKDIR", "ENV"):
-                if not image_stack:
-                    raise TplBuildException(
-                        f"{line_num}: Expected image start, not {cmd}"
-                    )
-                image_stack[-1].image = CommandImage(
-                    parent=image_stack[-1].image,
-                    command=cmd,
-                    args=line,
+            )
+        elif cmd == "END":
+            if line:
+                raise TplBuildException(
+                    f"{line_num}: Unexpected extra data after END command"
                 )
-            elif cmd == "COPY":
-                if not image_stack:
-                    raise TplBuildException(
-                        f"{line_num}: Expected image start, not {cmd}"
-                    )
-
-                ctx = image_stack[-1].contexts[-1]
-
-                if line.startswith("--from="):
-                    line = line[7:]
-                    if line[0] in '"[':
-                        try:
-                            ctx_name, pos = json_raw_decode(line)
-                        except json.JSONDecodeError as exc:
-                            raise TplBuildException(
-                                f"{line_num}: Failed to parse COPY --from argument"
-                            ) from exc
-                        line = line[pos:].lstrip()
-                    else:
-                        line_parts = line.split(maxsplit=1)
-                        ctx_name = line_parts[0]
-                        line = line_parts[1] if len(line_parts) > 1 else ""
-
-                    ctx = _LateImageReference(ctx_name)
-
-                if ctx is None:
-                    raise TplBuildException(
-                        f"{line_num}: Cannot COPY from null context"
-                    )
-
-                assert not isinstance(ctx, str)
-                image_stack[-1].image = CopyCommandImage(
-                    parent=image_stack[-1].image,
-                    context=ctx,
-                    command=line,
-                )
-            elif cmd == "METADATA":
-                if not image_stack:
-                    raise TplBuildException(
-                        f"{line_num}: Expected image start, not {cmd}"
-                    )
-                try:
-                    metadata = json_decode(line)
-                except json.JSONDecodeError as exc:
-                    raise TplBuildException(
-                        f"{line_num}: Failed to parse METADATA data"
-                    ) from exc
-                image_metadata[image_stack[-1].name] = metadata
-                if "context" in metadata:
-                    image_stack[-1].contexts = [
-                        _LateImageReference(metadata["context"])
-                    ]
-            elif cmd == "PUSHCONTEXT":
-                if not image_stack:
-                    raise TplBuildException(
-                        f"{line_num}: Expected image start, not {cmd}"
-                    )
-                push_context = line
-                if line and line[0] in '"[':
-                    try:
-                        push_context = json_decode(line)
-                    except json.JSONDecodeError as exc:
-                        raise TplBuildException(
-                            f"{line_num}: Failed to parse PUSHCONTEXT data"
-                        ) from exc
-                image_stack[-1].contexts.append(_LateImageReference(push_context))
-            elif cmd == "POPCONTEXT":
-                if not image_stack:
-                    raise TplBuildException(
-                        f"{line_num}: Expected image start, not {cmd}"
-                    )
-                if len(image_stack[-1].contexts) <= 1:
-                    raise TplBuildException(f"{line_num}: No context on stack to pop")
-                image_stack[-1].contexts.pop()
-            else:
-                raise TplBuildException(f"Unsupported build command {repr(cmd)}")
-
-        while image_stack:
             _pop_image_stack()
+        elif cmd in ("RUN", "ENTRYPOINT", "COMMAND", "WORKDIR", "ENV"):
+            if not image_stack:
+                raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
+            image_stack[-1].image = CommandImage(
+                parent=image_stack[-1].image,
+                command=cmd,
+                args=line,
+            )
+        elif cmd == "COPY":
+            if not image_stack:
+                raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
 
-        self._resolve_late_references(result, platform)
+            ctx = image_stack[-1].contexts[-1]
 
-        return result
+            if line.startswith("--from="):
+                line_parts = line[7:].split(maxsplit=1)
+                line = line_parts[1] if len(line_parts) > 1 else ""
+                ctx = _LateImageReference(line_parts[0])
+
+            if ctx is None:
+                raise TplBuildException(f"{line_num}: Cannot COPY from null context")
+
+            assert not isinstance(ctx, str)
+            image_stack[-1].image = CopyCommandImage(
+                parent=image_stack[-1].image,
+                context=ctx,
+                command=line,
+            )
+        elif cmd == "PUSHCONTEXT":
+            if not image_stack:
+                raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
+            image_stack[-1].contexts.append(_LateImageReference(line))
+        elif cmd == "POPCONTEXT":
+            if not image_stack:
+                raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
+            if len(image_stack[-1].contexts) <= 1:
+                raise TplBuildException(f"{line_num}: No context on stack to pop")
+            image_stack[-1].contexts.pop()
+        else:
+            raise TplBuildException(f"Unsupported build command {repr(cmd)}")
+
+    while image_stack:
+        _pop_image_stack()
+
+    _resolve_late_references(result, platform)
+
+    return result

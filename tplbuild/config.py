@@ -216,15 +216,53 @@ DOCKER_CLIENT_CONFIG = ClientConfig(
 )
 
 
+class StageConfig(pydantic.BaseModel):
+    """Configuration data for a named build stage"""
+
+    #: Is the stage a base stage
+    base: bool = False
+    #: All image names to assign to the built image. Must be empty for base images.
+    image_names: List[str] = []
+    #: All image names to assign and then push to remote registries.
+    #: Must be empty for base images.
+    push_names: List[str] = []
+
+    @pydantic.validator("image_names")
+    def image_names_empty_for_base(cls, v, values):
+        """Ensure base images have no image_names"""
+        if v and values["base"]:
+            raise ValueError("image_names must be empty for base images")
+        return v
+
+    @pydantic.validator("push_names")
+    def push_names_empty_for_base(cls, v, values):
+        """Ensure base images have no push_names"""
+        if v and values["base"]:
+            raise ValueError("push_names must be empty for base images")
+        return v
+
+
 class TplConfig(pydantic.BaseModel):
     """Top level config model for tplbuild"""
 
     #: Must be "1.0"
     version: Literal["1.0"] = "1.0"
-    #: Image repo where base images will be stored. This will
-    #:     be interpretted as a Python format string receiving the single
-    #:     named argument "stage_name".
-    base_image_repo: Optional[str] = None
+    #: Jinja template that renders to the image name where a base image
+    #: will be stored. This should *not* include a tag as tplbuild uses
+    #: the tag itself to identify the content-addressed build. This
+    #: template is passed "stage_name", "profile", and "platform"
+    #: corresponding to the name of the stage, the name of the profile
+    #: that rendered the image, and the name of the build platform respectively.
+    base_image_name: Optional[str] = None
+    #: A Jinja template that renders to the default image name for a
+    #: given stage_name. Like :attr:`base_image_name` the template is passed
+    #: "stage_name", "profile", "and "platform" parameters.
+    stage_image_name: str = "{{ stage_name}}"
+    #: A Jinja template that renders to the default push name for a
+    #: given stage_name. Like :attr:`base_image_name` the template is passed
+    #: "stage_name", "profile", "and "platform" parameters.
+    stage_push_name: str = "{{ stage_name}}"
+    #: Syntax header to include in rendered dockerfiles. This is useful if you
     #: Syntax header to include in rendered dockerfiles. This is useful if you
     #: e.g. want to make use of buildkit features not available by default.
     dockerfile_syntax: Optional[str] = None
@@ -249,6 +287,12 @@ class TplConfig(pydantic.BaseModel):
     #:     be referred to by name in the build file and should be unique
     #:     among all other stages.
     contexts: Dict[str, TplContextConfig] = {"default": TplContextConfig()}
+    #: A mapping of stage names to stage configs. This can be used to override
+    #: the default behavior of tplbuild or apply different or more than just a
+    #: single image name to a given stage. See
+    #: :meth:`Tplbuild.default_stage_config` for information about default stage
+    #: configuration.
+    stages: Dict[str, StageConfig] = {}
 
     @pydantic.validator("platforms")
     def platform_nonempty(cls, v):

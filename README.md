@@ -35,7 +35,11 @@ version: "1.0"
 
 # Define how base images are named and where they are pushed. This is required
 # if using base images in your build file.
-base_image_repo: docker.myorg.com/base-{stage_name}
+base_image_name: docker.myorg.com/base-{stage_name}
+
+# Define how to tag/push built top level images by default. What image tags to
+# use can be fully customized per stage as well.
+stage_image_name: msg555/{{ stage_name }}
 
 # Some stuff that should probably be user specific.
 # TODO: Decide how to manage project configuration with user configuration.
@@ -109,16 +113,16 @@ contexts:
 
 ```
 # Define base image stage
-{{ begin_stage("myimage-base", from=("python", "3.8"), context="base", base=True) }}
-  
+FROM python:3.8 AS base-myimage
+PUSHCONTEXT base
+
 WORKDIR /work
 COPY . ./
 RUN pip install -r requirements.txt {% if env == "dev" -%}-r requirements-dev.txt{%- endif %}
 
 
-# Define top level image stage. If this is a release build we'll also push
-# the image to our registry.
-{{ begin_stage("myimage", from="myimage-base", tags=my_tags, push_tags=my_push_tags) }}
+# Define top level image stage.
+FROM base-myimage AS myimage
 
 COPY src ./mymodule
 COMMAND ["python", "-m", "mymodule"]

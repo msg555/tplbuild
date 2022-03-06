@@ -12,9 +12,9 @@ class BuildUtility(CliUtility):
         parser.add_argument(
             "image",
             nargs="*",
-            help="Images to build. Use 'stage_name=target_tag' to "
-            "override the default tags for stage_name or "
-            "'stage_name=' to tag the image as its stage name",
+            help="Images to build. Use 'stage_name=target_name' to "
+            "override the default image name for stage_name or "
+            "'stage_name=' to use the stage name as the image name.",
         )
         parser.add_argument(
             "--profile",
@@ -39,11 +39,11 @@ class BuildUtility(CliUtility):
             platform=args.platform,
         )
 
-        # Remove push tags
+        # Remove push names
         for stage_data in stage_mapping.values():
-            stage_data.push_tags = ()
+            stage_data.config.push_names.clear()
 
-        # Figure out what images to build, override tags where requested.
+        # Figure out what images to build, override image_names where requested.
         images_to_build = set()
         for image_arg in args.image:
             image_parts = image_arg.split("=", maxsplit=1)
@@ -51,14 +51,17 @@ class BuildUtility(CliUtility):
             if image_parts[0] not in stage_mapping:
                 raise TplBuildException(f"Unknown build stage {repr(image_parts[0])}")
             if len(image_parts) > 1:
-                stage_mapping[image_parts[0]].tags = (image_parts[1] or image_parts[0],)
+                stage_mapping[image_parts[0]].config.image_names = [
+                    image_parts[1] or image_parts[0],
+                ]
 
-        # Only explicitly build stages that have tags associated with them.
+        # Only explicitly build stages that have image_names associated with them.
         # Anything else that is needed will be included implicitly in the build graph.
         stages_to_build = [
             stage
             for stage_name, stage in stage_mapping.items()
-            if stage.tags and (not images_to_build or stage_name in images_to_build)
+            if stage.config.image_names
+            and (not images_to_build or stage_name in images_to_build)
         ]
 
         # Resolve the locked source image manifest content address from cached

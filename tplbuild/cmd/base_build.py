@@ -3,7 +3,7 @@ from typing import List
 
 from tplbuild.cmd.utility import CliUtility
 from tplbuild.exceptions import TplBuildException
-from tplbuild.render import StageData
+from tplbuild.images import StageData
 from tplbuild.tplbuild import TplBuild
 
 

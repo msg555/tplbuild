@@ -1,23 +1,7 @@
 import contextlib
-import json
 import os
 import tempfile
-from typing import Any, Iterable, List, Tuple
-
-
-def json_encode(data: Any) -> str:
-    """Helper function to encode JSON data"""
-    return json.dumps(data)
-
-
-def json_decode(data: str) -> Any:
-    """Helper function to decode JSON data"""
-    return json.loads(data)
-
-
-def json_raw_decode(data: str) -> Tuple[Any, int]:
-    """Helper function to decode raw JSON data"""
-    return json.JSONDecoder().raw_decode(data)
+from typing import Iterable, List, Tuple
 
 
 def format_simple(fmt: str, **params) -> str:

@@ -10,8 +10,8 @@ from .images import (
     ImageDefinition,
     MultiPlatformImage,
     SourceImage,
+    StageData,
 )
-from .render import StageData
 
 
 @dataclass(eq=False)
@@ -64,7 +64,11 @@ class BuildPlanner:
                     images; any required dependant stages will automatically
                     be built but their tags will not be set if not listed here.
         """
-        stage_data = list(stage for stage in stages if stage.tags or stage.push_tags)
+        stage_data = [
+            stage
+            for stage in stages
+            if stage.config.image_names or stage.config.push_names
+        ]
         stage_images = [stage.image for stage in stage_data]
         hash_mapping = hash_graph(stage_images)
 

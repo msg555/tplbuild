@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+import jinja2
 import yaml
 from aioregistry import (
     AsyncRegistryClient,
@@ -18,13 +19,15 @@ from aioregistry import (
 )
 
 from .arch import client_platform, normalize_platform, normalize_platform_string
-from .config import BuildData, TplConfig
-from .exceptions import TplBuildException, TplBuildNoSourceImageException
-from .executor import BuildExecutor
+from .config import BuildData, StageConfig, TplConfig
+from .exceptions import (
+    TplBuildException,
+    TplBuildNoSourceImageException,
+    TplBuildTemplateException,
+)
 from .graph import hash_graph, visit_graph
-from .images import BaseImage, ImageDefinition, SourceImage
+from .images import BaseImage, ImageDefinition, SourceImage, StageData
 from .plan import BuildOperation, BuildPlanner
-from .render import BuildRenderer, StageData
 from .utils import open_and_swap
 
 LOGGER = logging.getLogger(__name__)
@@ -71,14 +74,18 @@ class TplBuild:
         *,
         registry_client: Optional[AsyncRegistryClient] = None,
     ) -> None:
+        # pylint: disable=import-outside-toplevel,cyclic-import
+        from .executor import BuildExecutor
+
         self.base_dir = base_dir
         self.config = config
         self.planner = BuildPlanner()
-        self.renderer = BuildRenderer(self.base_dir, self.config)
         self.custom_client = bool(registry_client)
         self.registry_client = registry_client or AsyncRegistryClient()
-        self.executor = BuildExecutor(
-            self.config.client, self.config.base_image_repo or "", self.registry_client
+        self.executor = BuildExecutor(self)
+        self.jinja_env = jinja2.Environment()
+        self.jinja_file_env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(base_dir)
         )
         try:
             with open(
@@ -96,6 +103,112 @@ class TplBuild:
         if not self.custom_client:
             await self.registry_client.__aexit__(exc_type, exc_value, exc_traceback)
 
+    def jinja_render(
+        self,
+        template: str,
+        params: Dict[str, Any],
+        *,
+        file_template=False,
+        file_env=False,
+    ) -> str:
+        """
+        Renders a Jinja template in the appropriate jinja environment and returns
+        the rendered result. If `file_env` is True this will allow other templates
+        to be loaded using include commands. If `file_template` is True this will
+        interpret `template` as a file path to a template rather than a template.
+
+        On Failure this will raise a TplBuildTempalteException.
+        """
+        jinja_env = self.jinja_file_env if file_env else self.jinja_env
+        try:
+            if file_template:
+                jtpl = jinja_env.get_template(template)
+            else:
+                jtpl = jinja_env.from_string(template)
+            return jtpl.render(**params)
+        except jinja2.TemplateError as exc:
+            if file_template:
+                raise TplBuildTemplateException(
+                    f"Failed to render file template {repr(file_template)}"
+                ) from exc
+            raise TplBuildTemplateException("Failed to render template") from exc
+
+    def get_base_image_name(self, base_image: BaseImage) -> str:
+        """
+        Return the base image name by rendering the base image name
+        config template.
+        """
+        if self.config.base_image_name is None:
+            raise TplBuildException("Must configure base_image_name to use base images")
+        try:
+            return (
+                self.jinja_render(
+                    self.config.base_image_name,
+                    dict(
+                        stage_name=base_image.stage,
+                        profile=base_image.profile,
+                        platform=base_image.platform,
+                    ),
+                )
+                + f":{base_image.content_hash}"
+            )
+        except TplBuildTemplateException as exc:
+            exc.update_message("Failed to render base image name template")
+            raise exc
+
+    def get_stage_config(
+        self, stage_name: str, profile: str, platform: str
+    ) -> StageConfig:
+        """
+        Return the StageConfig for the given stage name. This will first check
+        :attr:`TplConfig.stages` to see if there is an explicit configuration
+        for this stage.
+
+        Otherwise, if the stage name starts with "base-" or "base_" a base
+        image `StageConfig` will be returned.
+
+        If the name starts with "anon-" or "anon_" instead the stage will be
+        considered an "anonymous" stage. This means that it will neither be built
+        as a base image nor will it be tagged or pushed to any image name. Such
+        images are used for intermediate build operations and are not an output
+        of the build themselves.
+
+        For every other image the :attr:`TplConfig.stage_image_name` template
+        will be used to determine the desired image name for the stage. This
+        name will be used to tag the built image and push to remote registries.
+        """
+        if stage_config := self.config.stages.get(stage_name):
+            return stage_config.copy()
+        if stage_name[0:5] in ("base-", "base_"):
+            return StageConfig(base=True)
+        if stage_name[0:5] in ("anon-", "anon_"):
+            return StageConfig()
+        params = dict(
+            stage_name=stage_name,
+            profile=profile,
+            platform=platform,
+        )
+        try:
+            image_names = [self.jinja_render(self.config.stage_image_name, params)]
+        except TplBuildTemplateException as exc:
+            exc.update_message("Failed to render stage image name template")
+            raise exc
+
+        push_names = []
+        if self.config.stage_push_name:
+            try:
+                push_names.append(
+                    self.jinja_render(self.config.stage_push_name, params)
+                )
+            except TplBuildTemplateException as exc:
+                exc.update_message("Failed to render stage push name template")
+                raise exc
+
+        return StageConfig(
+            image_names=image_names,
+            push_names=push_names,
+        )
+
     def lookup_base_image(
         self,
         stage_name: str,
@@ -111,7 +224,7 @@ class TplBuild:
             KeyError: If the base image does not exist or has not been built
             TplBuildException: If no base image repo is configured
         """
-        if self.config.base_image_repo is None:
+        if self.config.base_image_name is None:
             raise TplBuildException("No base image repo format configured")
 
         profile = profile or self.default_profile
@@ -122,7 +235,7 @@ class TplBuild:
             platform=platform,
             content_hash=cached_content_hash,
         )
-        return image.get_image_name(self.config.base_image_repo), image
+        return self.get_base_image_name(image), image
 
     @property
     def default_profile(self) -> str:
@@ -180,9 +293,12 @@ class TplBuild:
             dict mapping stage names/context names to their
             respective :class:`StageData`.
         """
+        # pylint: disable=import-outside-toplevel,cyclic-import
+        from .render import render
+
         profile = profile or self.default_profile
         platform = platform or await self.get_default_platform()
-        return self.renderer.render(profile, self.get_render_context(profile), platform)
+        return render(self, profile, self.get_render_context(profile), platform)
 
     def plan(
         self,
@@ -283,7 +399,9 @@ class TplBuild:
         try:
             descriptor = await self.registry_client.ref_lookup(manifest_ref)
             if descriptor is None:
-                raise TplBuildException("Failed to lookup source image")
+                raise TplBuildException(
+                    f"Failed to lookup source image {repr(str(manifest_ref))}"
+                )
             manifest_ref = manifest_ref.copy(update=dict(ref=descriptor.digest))
         except RegistryException as exc:
             raise TplBuildException("Failed to lookup source image") from exc
@@ -424,16 +542,11 @@ class TplBuild:
         for stage, image in zip(stages, images):
             stage.image = image
 
-            # If we're really building a base image add its push tag.
+            # If we're really building a base image add its push name.
             if stage.base_image and stage.image is not stage.base_image:
-                if self.config.base_image_repo is None:
-                    LOGGER.warning(
-                        "Attempting to build base image but no base image repo set"
-                    )
-                else:
-                    stage.push_tags += (
-                        stage.base_image.get_image_name(self.config.base_image_repo),
-                    )
+                stage.config.push_names.append(
+                    self.get_base_image_name(stage.base_image)
+                )
 
     async def resolve_source_images(
         self,

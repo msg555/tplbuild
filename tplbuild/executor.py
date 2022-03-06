@@ -16,7 +16,6 @@ from typing import (
 )
 
 from aioregistry import (
-    AsyncRegistryClient,
     Descriptor,
     ManifestListV2S2,
     RegistryException,
@@ -25,7 +24,7 @@ from aioregistry import (
 )
 
 from .arch import split_platform
-from .config import ClientCommand, ClientConfig
+from .config import ClientCommand
 from .context import BuildContext
 from .exceptions import TplBuildException
 from .images import (
@@ -39,6 +38,7 @@ from .images import (
 )
 from .plan import BuildOperation
 from .sync_to_async_pipe import SyncToAsyncPipe
+from .tplbuild import TplBuild
 
 LOGGER = logging.getLogger(__name__)
 
@@ -143,18 +143,15 @@ class BuildExecutor:
 
     def __init__(
         self,
-        client_config: ClientConfig,
-        base_image_repo: str,
-        registry_client: AsyncRegistryClient,
+        tplbld: TplBuild,
     ) -> None:
-        self.client_config = client_config
-        self.base_image_repo = base_image_repo
-        self.registry_client = registry_client
+        self.tplbld = tplbld
         self.transient_prefix = "tplbuild"
 
-        self.sem_build_jobs = asyncio.BoundedSemaphore(client_config.build_jobs)
-        self.sem_push_jobs = asyncio.BoundedSemaphore(client_config.push_jobs)
-        self.sem_tag_jobs = asyncio.BoundedSemaphore(client_config.tag_jobs)
+        self.client_config = tplbld.config.client
+        self.sem_build_jobs = asyncio.BoundedSemaphore(self.client_config.build_jobs)
+        self.sem_push_jobs = asyncio.BoundedSemaphore(self.client_config.push_jobs)
+        self.sem_tag_jobs = asyncio.BoundedSemaphore(self.client_config.tag_jobs)
 
     async def build(
         self,
@@ -186,9 +183,9 @@ class BuildExecutor:
             # relative order with push tags after tags.
             tags: Dict[str, bool] = {}
             for stage in build_op.stages:
-                for tag in stage.tags:
+                for tag in stage.config.image_names:
                     tags.setdefault(tag, False)
-                for tag in stage.push_tags:
+                for tag in stage.config.push_names:
                     tags[tag] = True
 
             # Wait for dependencies to finish
@@ -273,7 +270,7 @@ class BuildExecutor:
             await self.tag_image(sub_image_tag, str(sub_image_ref))
             await self.push_image(str(sub_image_ref))
             try:
-                desc = await self.registry_client.ref_lookup(sub_image_ref)
+                desc = await self.tplbld.registry_client.ref_lookup(sub_image_ref)
             except RegistryException as exc:
                 raise TplBuildException("Failed to look up image digest") from exc
             if desc is None:
@@ -307,7 +304,7 @@ class BuildExecutor:
                 mediaType="application/vnd.docker.distribution.manifest.list.v2+json",
                 manifests=sub_manifest_items,
             )
-            await self.registry_client.manifest_write(image_ref, manifest)
+            await self.tplbld.registry_client.manifest_write(image_ref, manifest)
             print(f"Wrote multi architecture platform {image_ref}")
 
     async def _build_context(self, tag: str, image: ContextImage) -> None:
@@ -373,7 +370,7 @@ class BuildExecutor:
             assert image.digest is not None
             return f"{image.repo}@{image.digest}"
         if isinstance(image, BaseImage):
-            return image.get_image_name(self.base_image_repo)
+            return self.tplbld.get_base_image_name(image)
         raise AssertionError("unexpected image type")
 
     async def client_build(
