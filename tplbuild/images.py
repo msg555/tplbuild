@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 from .config import StageConfig
 from .context import BuildContext
@@ -34,9 +34,41 @@ class ImageDefinition(metaclass=abc.ABCMeta):
         """
         assert not tuple(deps)
 
+    def merge_into(self, image: "ImageDefinition") -> None:
+        """
+        Called during planning during the canonicalization phase. Two images will
+        be merged if they represent the same build step. This step allows for
+        bookkeepping when tracking what image definitions came from where.
+        """
+
+
+@dataclass(frozen=True)
+class StageDescriptor:
+    """Describes a rendered stage"""
+
+    name: str
+    profile: str
+    platform: str
+
+
+@dataclass(eq=False)  # type: ignore
+class StageDefinedImage(ImageDefinition):  # pylint: disable=abstract-method
+    """
+    Parent class for image nodes that are defined by build stages. This is
+    meant to help facilitate bookkeeping for display/debug purposes of where
+    an image node was defined.
+    """
+
+    stage_descs: Set[StageDescriptor]
+
+    def merge_into(self, image: ImageDefinition) -> None:
+        """Merge the stage descriptors together."""
+        assert isinstance(image, StageDefinedImage)
+        self.stage_descs.update(image.stage_descs)
+
 
 @dataclass(eq=False)
-class CommandImage(ImageDefinition):
+class CommandImage(StageDefinedImage):
     """Image node ending in a command other than COPY."""
 
     parent: ImageDefinition
@@ -58,7 +90,7 @@ class CommandImage(ImageDefinition):
 
 
 @dataclass(eq=False)
-class CopyCommandImage(ImageDefinition):
+class CopyCommandImage(StageDefinedImage):
     """Image node ending in a COPY command"""
 
     parent: ImageDefinition
@@ -95,7 +127,7 @@ class SourceImage(ImageDefinition):
 
 
 @dataclass(eq=False)
-class MultiPlatformImage(ImageDefinition):
+class MultiPlatformImage(StageDefinedImage):
     """
     Container image node that merges multiple other images into a single
     manifest list.
@@ -157,7 +189,7 @@ class BaseImage(ImageDefinition):
 
 
 @dataclass(eq=False)
-class ContextImage(ImageDefinition):
+class ContextImage(StageDefinedImage):
     """Image node representing a build context"""
 
     context: BuildContext
@@ -166,7 +198,7 @@ class ContextImage(ImageDefinition):
         return self.context.symbolic_hash if symbolic else self.context.full_hash
 
 
-@dataclass
+@dataclass(eq=False)
 class StageData:
     """
     Dataclass holding metadata about a rendered image stage.

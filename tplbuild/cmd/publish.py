@@ -1,4 +1,5 @@
 import argparse
+import dataclasses
 from typing import Dict
 
 from tplbuild.cmd.utility import CliUtility
@@ -48,7 +49,11 @@ class PublishUtility(CliUtility):
 
                 if multi_stage is stage_data:
                     multi_stage.image = MultiPlatformImage(
-                        images={platform: multi_stage.image},
+                        stage_descs={
+                            dataclasses.replace(desc, platform="*")
+                            for desc in getattr(stage_data.image, "stage_descs", ())
+                        },
+                        images={platform: stage_data.image},
                     )
                     continue
 

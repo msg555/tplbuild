@@ -16,6 +16,7 @@ from .images import (
     ImageDefinition,
     SourceImage,
     StageData,
+    StageDescriptor,
 )
 from .tplbuild import TplBuild
 from .utils import line_reader
@@ -41,17 +42,16 @@ class _LateImageReference(ImageDefinition):
 
 def _render_context(
     tplbld: TplBuild,
-    context_name: str,
     context_config: TplContextConfig,
     profile_data: Dict[str, Any],
-    platform: str,
+    stage_desc: StageDescriptor,
 ) -> ContextImage:
     """
     Renders a context config into a ContextImage graph representation.
     """
-    if context_name in RESERVED_STAGE_NAMES:
+    if stage_desc.name in RESERVED_STAGE_NAMES:
         raise TplBuildException(
-            f"Cannot name context {repr(context_name)}, name is reserved"
+            f"Cannot name context {repr(stage_desc.name)}, name is reserved"
         )
 
     ignore_data = context_config.ignore
@@ -73,23 +73,24 @@ def _render_context(
         ignore_data = tplbld.jinja_render(
             ignore_data,
             dict(
-                platform=platform,
+                platform=stage_desc.platform,
                 **profile_data,
             ),
             file_env=True,
         )
     except TplBuildTemplateException as exc:
         exc.update_message(
-            f"Failed to render ignore context for {repr(context_name)}: {exc}"
+            f"Failed to render ignore context for {repr(stage_desc.name)}: {exc}"
         )
         raise
 
     return ContextImage(
+        stage_descs={stage_desc},
         context=BuildContext(
             context_config.base_dir,
             None if context_config.umask is None else int(context_config.umask, 8),
             ignore_data.split("\n"),
-        )
+        ),
     )
 
 
@@ -141,11 +142,20 @@ def render(
     """
     Renders all build contexts and stages into its graph representation.
     """
+    make_stage_desc = lambda name: StageDescriptor(
+        name=name,
+        profile=profile,
+        platform=platform,
+    )
+
     result = {
         context_name: StageData(
             name=context_name,
             image=_render_context(
-                tplbld, context_name, context_config, profile_data, platform
+                tplbld,
+                context_config,
+                profile_data,
+                make_stage_desc(context_name),
             ),
             config=StageConfig(),
         )
@@ -243,6 +253,7 @@ def render(
             if not image_stack:
                 raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
             image_stack[-1].image = CommandImage(
+                stage_descs={make_stage_desc(image_stack[-1].name)},
                 parent=image_stack[-1].image,
                 command=cmd,
                 args=line,
@@ -263,6 +274,7 @@ def render(
 
             assert not isinstance(ctx, str)
             image_stack[-1].image = CopyCommandImage(
+                stage_descs={make_stage_desc(image_stack[-1].name)},
                 parent=image_stack[-1].image,
                 context=ctx,
                 command=line,

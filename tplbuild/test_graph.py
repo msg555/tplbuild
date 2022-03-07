@@ -30,6 +30,7 @@ class ImageTestNode(ImageDefinition):
 def test_visit_graph_cycle():
     """Test that cycle detection works correct for visit_graph"""
     img = CommandImage(
+        stage_descs=set(),
         parent=None,
         command="RUN",
         args="stuff",
@@ -45,6 +46,7 @@ def test_visit_graph_cycle():
     for _ in range(9):
         img_list.append(
             CopyCommandImage(
+                stage_descs=set(),
                 parent=img_list[-1],
                 context=img_list[-1],
                 command="hello",

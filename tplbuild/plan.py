@@ -76,7 +76,10 @@ class BuildPlanner:
         canonical_image: Dict[str, ImageDefinition] = {}
 
         def canonicalize(image: ImageDefinition) -> ImageDefinition:
-            return canonical_image.setdefault(hash_mapping[image], image)
+            canon_image = canonical_image.setdefault(hash_mapping[image], image)
+            if canon_image is not image:
+                canon_image.merge_into(image)
+            return canon_image
 
         def mark_deps(image: ImageDefinition) -> None:
             for idx, dep in enumerate(image.get_dependencies()):

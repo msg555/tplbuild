@@ -4,16 +4,7 @@ import os
 import sys
 import uuid
 from asyncio.subprocess import DEVNULL, PIPE
-from typing import (
-    AsyncIterable,
-    Awaitable,
-    BinaryIO,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-)
+from typing import AsyncIterable, Awaitable, Callable, Dict, List, Optional
 
 from aioregistry import (
     Descriptor,
@@ -36,6 +27,7 @@ from .images import (
     MultiPlatformImage,
     SourceImage,
 )
+from .output import OutputStream
 from .plan import BuildOperation
 from .sync_to_async_pipe import SyncToAsyncPipe
 from .tplbuild import TplBuild
@@ -48,7 +40,7 @@ async def _create_subprocess(
     params: Dict[str, str],
     *,
     capture_output: bool = False,
-    output_prefix: Optional[bytes] = None,
+    output_stream: Optional[OutputStream] = None,
     input_data: Optional[AsyncIterable[bytes]] = None,
 ) -> bytes:
     """
@@ -58,18 +50,18 @@ async def _create_subprocess(
     env.update(cmd.render_environment(params))
     proc = await asyncio.create_subprocess_exec(
         *cmd.render_args(params),
-        stdout=DEVNULL if output_prefix is None and not capture_output else PIPE,
-        stderr=DEVNULL if output_prefix is None else PIPE,
+        stdout=PIPE,
+        stderr=PIPE,
         stdin=DEVNULL if input_data is None else PIPE,
         env=env,
     )
+    assert proc.stdout is not None and proc.stderr is not None
 
     async def copy_lines(
         src: asyncio.StreamReader,
-        dst: BinaryIO,
         *,
-        output_prefix: Optional[bytes] = None,
         output_arr: Optional[List[bytes]] = None,
+        err: bool = False,
     ) -> None:
         """
         Copy lines of output from src to dst. It's assumed that dst is a non
@@ -79,16 +71,10 @@ async def _create_subprocess(
             line = await src.readline()
             if not line:
                 continue
-
             if output_arr is not None:
                 output_arr.append(line)
-
-            if output_prefix is not None:
-                dst.write(output_prefix)
-                dst.write(line)
-                if not line.endswith(b"\n"):
-                    dst.write(b"\n")
-                dst.flush()
+            if output_stream is not None:
+                await output_stream.write(line, err=err)
 
     async def copy_input_data():
         """
@@ -104,25 +90,11 @@ async def _create_subprocess(
         except (BrokenPipeError, ConnectionResetError):
             LOGGER.warning("process exited before finished writing input")
 
-    output_data: List[bytes] = []
-    coros: List[Awaitable] = []
-    if output_prefix is not None or capture_output:
-        assert proc.stdout is not None
-        coros.append(
-            copy_lines(
-                proc.stdout,
-                sys.stdout.buffer,
-                output_prefix=output_prefix,
-                output_arr=output_data,
-            )
-        )
-
-    if output_prefix is not None:
-        assert proc.stderr is not None
-        coros.append(
-            copy_lines(proc.stderr, sys.stderr.buffer, output_prefix=output_prefix)
-        )
-
+    output_arr: List[bytes] = []
+    coros: List[Awaitable] = [
+        copy_lines(proc.stdout, output_arr=output_arr if capture_output else None),
+        copy_lines(proc.stderr, err=True),
+    ]
     if input_data is not None:
         coros.append(copy_input_data())
 
@@ -132,7 +104,18 @@ async def _create_subprocess(
     if proc.returncode:
         raise TplBuildException("Client build command failed")
 
-    return b"".join(output_data)
+    return b"".join(output_arr)
+
+
+def _compute_titles(build_ops: List[BuildOperation]) -> List[str]:
+    titles = []
+    for build_op in build_ops:
+        descs = getattr(build_op.image, "stage_descs", ())
+        if not descs:
+            titles.append("intermediate")
+            continue
+        titles.append(",".join(sorted(set(desc.name for desc in descs))))
+    return titles
 
 
 class BuildExecutor:
@@ -155,7 +138,7 @@ class BuildExecutor:
 
     async def build(
         self,
-        build_ops: Iterable[BuildOperation],
+        build_ops: List[BuildOperation],
         *,
         complete_callback: Optional[Callable[[BuildOperation, str], None]] = None,
     ) -> None:
@@ -174,8 +157,9 @@ class BuildExecutor:
         transient_images: List[str] = []
         image_tag_map: Dict[ImageDefinition, str] = {}
         build_tasks: Dict[BuildOperation, Awaitable] = {}
+        build_titles = _compute_titles(build_ops)
 
-        async def _build_single(build_op: BuildOperation):
+        async def _build_single(build_op: BuildOperation, build_title: str):
 
             # Construct mapping of all tags to a bool indicating if the
             # tag should be pushed. The dict is ordered in the same order
@@ -194,7 +178,9 @@ class BuildExecutor:
 
             if isinstance(build_op.image, MultiPlatformImage):
                 primary_tag = ""
-                await self._build_multi_platform(build_op.image, tags, image_tag_map)
+                await self._build_multi_platform(
+                    build_op.image, tags, image_tag_map, build_title
+                )
             else:
                 if tags:
                     primary_tag = next(iter(tags))
@@ -202,9 +188,11 @@ class BuildExecutor:
                     primary_tag = f"{self.transient_prefix}-{uuid.uuid4()}"
 
                 if isinstance(build_op.image, ContextImage):
-                    await self._build_context(primary_tag, build_op.image)
+                    await self._build_context(primary_tag, build_op.image, build_title)
                 else:
-                    await self._build_work(primary_tag, build_op, image_tag_map)
+                    await self._build_work(
+                        primary_tag, build_op, image_tag_map, build_title
+                    )
 
                 if not tags:
                     transient_images.append(primary_tag)
@@ -217,14 +205,14 @@ class BuildExecutor:
                     if push:
                         # TODO: Local build dependants should be able to
                         #       progress while we're pushing.
-                        await self.push_image(tag)
+                        await self.push_image(tag, build_title)
 
             if complete_callback:
                 complete_callback(build_op, primary_tag)
 
         build_tasks.update(
-            (build_op, asyncio.create_task(_build_single(build_op)))
-            for build_op in build_ops
+            (build_op, asyncio.create_task(_build_single(build_op, build_title)))
+            for build_op, build_title in zip(build_ops, build_titles)
         )
         try:
             for task in build_tasks.values():
@@ -250,6 +238,7 @@ class BuildExecutor:
         image: MultiPlatformImage,
         tags: Dict[str, bool],
         image_tag_map: Dict[ImageDefinition, str],
+        title: str,
     ) -> None:
         """
         Push a multi-architecture image with the given tags. All tags
@@ -268,7 +257,7 @@ class BuildExecutor:
             )
             sub_image_tag = image_tag_map[sub_image]
             await self.tag_image(sub_image_tag, str(sub_image_ref))
-            await self.push_image(str(sub_image_ref))
+            await self.push_image(str(sub_image_ref), f"{title}[{platform}]")
             try:
                 desc = await self.tplbld.registry_client.ref_lookup(sub_image_ref)
             except RegistryException as exc:
@@ -307,7 +296,7 @@ class BuildExecutor:
             await self.tplbld.registry_client.manifest_write(image_ref, manifest)
             print(f"Wrote multi architecture platform {image_ref}")
 
-    async def _build_context(self, tag: str, image: ContextImage) -> None:
+    async def _build_context(self, tag: str, image: ContextImage, title: str) -> None:
         """
         Perform a build operation where the image is an ImageContext.
         """
@@ -315,6 +304,7 @@ class BuildExecutor:
             tag,
             "",
             b"FROM scratch\nCOPY . /\n",
+            title,
             image.context,
         )
 
@@ -323,6 +313,7 @@ class BuildExecutor:
         tag: str,
         build_op: BuildOperation,
         image_tag_map: Dict[ImageDefinition, str],
+        title: str,
     ) -> None:
         """
         Perform a build operation as a series of Dockerfile commands.
@@ -352,6 +343,7 @@ class BuildExecutor:
             tag,
             build_op.platform,
             dockerfile_data,
+            title,
             build_op.inline_context.context if build_op.inline_context else None,
         )
 
@@ -378,6 +370,7 @@ class BuildExecutor:
         image: str,
         platform: str,
         dockerfile_data: bytes,
+        title: str,
         context: Optional[BuildContext] = None,
     ) -> None:
         """Wrapper that executes the client command to start a build"""
@@ -412,15 +405,18 @@ class BuildExecutor:
                 cmd = self.client_config.build_platform
                 params["platform"] = platform
 
-            await asyncio.gather(
-                asyncio.get_running_loop().run_in_executor(None, sync_write_context),
-                _create_subprocess(
-                    cmd,
-                    params,
-                    output_prefix=b"hello: ",
-                    input_data=pipe_reader(),
-                ),
-            )
+            async with self.tplbld.output_streamer.start_stream(title) as output_stream:
+                await asyncio.gather(
+                    asyncio.get_running_loop().run_in_executor(
+                        None, sync_write_context
+                    ),
+                    _create_subprocess(
+                        cmd,
+                        params,
+                        output_stream=output_stream,
+                        input_data=pipe_reader(),
+                    ),
+                )
 
     async def tag_image(self, source_image: str, target_image: str) -> None:
         """Wrapper that executes the client tag command"""
@@ -438,14 +434,15 @@ class BuildExecutor:
                 {"image": image},
             )
 
-    async def push_image(self, image: str) -> None:
+    async def push_image(self, image: str, title: str) -> None:
         """Wrapper that executes the client push command"""
         async with self.sem_push_jobs:
-            await _create_subprocess(
-                self.client_config.push,
-                {"image": image},
-                output_prefix=b"pushing stuff: ",
-            )
+            async with self.tplbld.output_streamer.start_stream(title) as output_stream:
+                await _create_subprocess(
+                    self.client_config.push,
+                    {"image": image},
+                    output_stream=output_stream,
+                )
 
     async def platform(self) -> str:
         """

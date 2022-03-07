@@ -27,6 +27,7 @@ from .exceptions import (
 )
 from .graph import hash_graph, visit_graph
 from .images import BaseImage, ImageDefinition, SourceImage, StageData
+from .output import OutputStreamer
 from .plan import BuildOperation, BuildPlanner
 from .utils import open_and_swap
 
@@ -87,6 +88,7 @@ class TplBuild:
         self.jinja_file_env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(base_dir)
         )
+        self.output_streamer = OutputStreamer()
         try:
             with open(
                 os.path.join(base_dir, ".tplbuilddata.json"), encoding="utf-8"

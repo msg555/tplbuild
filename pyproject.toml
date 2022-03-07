@@ -29,6 +29,7 @@ disable = [
     "too-many-nested-blocks",
     "too-many-return-statements",
     "too-many-instance-attributes",
+    "too-many-arguments",
     "consider-using-assignment-expr",
     # handled by black
     "format",
