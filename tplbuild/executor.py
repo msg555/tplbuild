@@ -4,7 +4,7 @@ import os
 import sys
 import uuid
 from asyncio.subprocess import DEVNULL, PIPE
-from typing import AsyncIterable, Awaitable, Callable, Dict, List, Optional
+from typing import AsyncIterable, Awaitable, Callable, Dict, List, Optional, Set
 
 from aioregistry import (
     Descriptor,
@@ -107,14 +107,66 @@ async def _create_subprocess(
     return b"".join(output_arr)
 
 
+def _construct_title(data, *, seps=":", depth=0):
+    """
+    Construct image titles from trie structure.
+    """
+    if not data:
+        return ""
+    children = sorted(
+        (key, _construct_title(val, seps=seps, depth=depth + 1))
+        for key, val in data.items()
+    )
+    sep = seps[depth] if depth < len(seps) else seps[-1]
+    if len(children) == 1:
+        return sep.join(children[0])
+    if len(set(child[1] for child in children)) == 1:
+        return f"{{{','.join(child[0] for child in children)}}}{sep}{children[0][1]}"
+    return ",".join(f"{{{child[0]}{sep}{child[1]}}}" for child in children)
+
+
 def _compute_titles(build_ops: List[BuildOperation]) -> List[str]:
+    all_profiles: Set[str] = set()
+    all_platforms: Set[str] = set()
+
+    for build_op in build_ops:
+        descs = getattr(build_op.image, "stage_descs", ())
+        all_profiles.update(desc.profile for desc in descs)
+        all_platforms.update(desc.platform for desc in descs)
+
     titles = []
     for build_op in build_ops:
         descs = getattr(build_op.image, "stage_descs", ())
-        if not descs:
+
+        hierarchy: dict = {}
+        for desc in descs:
+            parts = [desc.name]
+            if len(all_profiles) > 1:
+                parts.append(desc.profile)
+            if len(all_platforms) > 1 and not isinstance(
+                build_op.image, MultiPlatformImage
+            ):
+                osname, arch, var = split_platform(desc.platform)
+                if var:
+                    arch = f"{arch}/{var}"
+                parts.append(osname)
+                parts.append(arch)
+
+            data = hierarchy
+            for part in parts:
+                data = data.setdefault(part, {})
+
+        if not hierarchy:
             titles.append("intermediate")
             continue
-        titles.append(",".join(sorted(set(desc.name for desc in descs))))
+
+        titles.append(
+            _construct_title(
+                hierarchy,
+                seps="::/" if len(all_profiles) > 1 else ":/",
+            )[:-1]
+        )
+
     return titles
 
 
@@ -257,7 +309,7 @@ class BuildExecutor:
             )
             sub_image_tag = image_tag_map[sub_image]
             await self.tag_image(sub_image_tag, str(sub_image_ref))
-            await self.push_image(str(sub_image_ref), f"{title}[{platform}]")
+            await self.push_image(str(sub_image_ref), f"{title}:{platform}")
             try:
                 desc = await self.tplbld.registry_client.ref_lookup(sub_image_ref)
             except RegistryException as exc:
@@ -294,7 +346,10 @@ class BuildExecutor:
                 manifests=sub_manifest_items,
             )
             await self.tplbld.registry_client.manifest_write(image_ref, manifest)
-            print(f"Wrote multi architecture platform {image_ref}")
+            async with self.tplbld.output_streamer.start_stream(title) as output_stream:
+                await output_stream.write(
+                    f"Wrote multi architecture platform {image_ref}".encode("utf-8")
+                )
 
     async def _build_context(self, tag: str, image: ContextImage, title: str) -> None:
         """
