@@ -15,8 +15,16 @@ default_profile: dev
 profiles:
   dev:
     env: dev
+    python_version: '3.8'
+  dev_3_9:
+    env: dev
+    python_version: '3.9'
+  dev_3_10:
+    env: dev
+    python_version: '3.10'
   release:
     env: release
+    python_version: '3.8'
 
 contexts:
   default:

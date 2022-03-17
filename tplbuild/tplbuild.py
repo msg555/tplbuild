@@ -475,6 +475,7 @@ class TplBuild:
         stages: List[StageData],
         *,
         dereference=False,
+        resolve_from_registry=True,
     ) -> None:
         """
         Resolve all :class:`BaseImage` nodes found in the image graph, setting
@@ -491,6 +492,10 @@ class TplBuild:
                 `content_hash` does not match the cached `content_hash` then
                 the node will be replaced with the base image's underlying
                 build definition.
+            resolve_from_registry: Modifies behavior when dereferencing to first
+                check if the image is present in the registry before dereferencing
+                the image. If the image is present the build data will be updated
+                automatically.
 
         This modifies the passed in build graph and does not return anything
         directly.
@@ -512,6 +517,46 @@ class TplBuild:
                     stage.base_image.content_hash = full_hash_mapping[stage.image]
                     stage.image = stage.base_image
 
+            if resolve_from_registry:
+                base_images: List[BaseImage] = [
+                    stage.base_image
+                    for stage in stages
+                    if stage.base_image and stage.base_image.image
+                ]
+
+                for base_image in base_images:
+                    cached_content_hash = (
+                        self.build_data.base.get(base_image.profile, {})
+                        .get(base_image.stage, {})
+                        .get(base_image.platform)
+                    )
+
+                    assert base_image.image
+                    if full_hash_mapping[base_image.image] != cached_content_hash:
+                        try:
+                            manifest_ref = parse_image_name(
+                                self.get_base_image_name(base_image)
+                            )
+                            if await self.registry_client.ref_lookup(manifest_ref):
+                                self.build_data.base.setdefault(
+                                    base_image.profile, {}
+                                ).setdefault(base_image.stage, {})[
+                                    base_image.platform
+                                ] = full_hash_mapping[
+                                    base_image.image
+                                ]
+                                LOGGER.info(
+                                    "Updating base image %s:%s:%s from registry",
+                                    base_image.stage,
+                                    base_image.profile,
+                                    base_image.platform,
+                                )
+                                self.save_build_data()
+                        except RegistryException as exc:
+                            raise TplBuildException(
+                                "Failed to lookup base image in registry"
+                            ) from exc
+
         def _resolve_base(image: ImageDefinition) -> ImageDefinition:
             if not isinstance(image, BaseImage):
                 return image
@@ -525,7 +570,7 @@ class TplBuild:
             if dereference:
                 if image.image is None:
                     raise TplBuildException(
-                        "Attempt to derference base image that has no image definition"
+                        "Attempt to dereference base image that has no image definition"
                     )
 
                 if full_hash_mapping[image.image] != cached_content_hash:

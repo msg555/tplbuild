@@ -125,8 +125,8 @@ class ClientConfig(pydantic.BaseModel):
     platform: Optional[ClientCommand] = None
 
     #: Maximum number of concurrent build jbs. If set to 0 this will be set to
-    #: `os.cpu_count()`.
-    build_jobs: int = 1
+    #: `os.cpu_count()`. (TODO)
+    build_jobs: int = 4
     #: Maximum number of concurrent push jobs.
     push_jobs: int = 4
     #: Maximum number of concurrent tag jobs.

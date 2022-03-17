@@ -1,4 +1,4 @@
-FROM python:3.8 AS base-tplbuild
+FROM python:{{ python_version }} AS base-tplbuild
 PUSHCONTEXT base
 
 COPY --from=docker:dind /usr/local/bin/docker /bin/
