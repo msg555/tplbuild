@@ -15,5 +15,7 @@ FROM base-tplbuild AS tplbuild
 
 COPY . ./
 
+RUN echo hi qemu
+
 ENV PYTHONPATH="${PYTHONPATH}:/tplbuild"
 ENTRYPOINT ["python3", "-m", "tplbuild"]
