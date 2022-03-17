@@ -48,22 +48,25 @@ def line_reader(document: str) -> Iterable[Tuple[int, str]]:
     the following line concatenated onto itself, not including the backslash or
     line feed character.
     """
+    idx = -1
     line_parts: List[str] = []
     lines = document.splitlines()
     for idx, line_part in enumerate(lines):
         line_part = line_part.rstrip()
-        if not line_parts and line_part.lstrip().startswith("#"):
+        if line_part.lstrip().startswith("#"):
             continue
         if line_part.endswith("\\") and not line_part.endswith("\\\\"):
             line_parts.append(line_part[:-1])
-            if idx + 1 < len(lines):
-                continue
-            line_part = ""
+            continue
 
         line = ("".join(line_parts) + line_part).strip()
         line_parts.clear()
         if line:
             yield idx, line
+
+    line = "".join(line_parts).strip()
+    if line:
+        yield idx, line
 
 
 @contextlib.contextmanager
