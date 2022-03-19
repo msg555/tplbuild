@@ -173,7 +173,7 @@ def render(
 
     try:
         dockerfile_data = tplbld.jinja_render(
-            "Dockerfile.tplbuild",
+            "Dockerfile",
             dict(
                 platform=platform,
                 **profile_data,
