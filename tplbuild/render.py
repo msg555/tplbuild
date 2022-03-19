@@ -249,7 +249,7 @@ def render(
                     f"{line_num}: Unexpected extra data after END command"
                 )
             _pop_image_stack()
-        elif cmd in ("RUN", "ENTRYPOINT", "COMMAND", "WORKDIR", "ENV"):
+        elif cmd in ("RUN", "ENTRYPOINT", "COMMAND", "WORKDIR", "ENV", "USER"):
             if not image_stack:
                 raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
             image_stack[-1].image = CommandImage(

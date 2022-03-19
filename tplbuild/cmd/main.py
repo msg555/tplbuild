@@ -134,7 +134,7 @@ def create_tplbld(args, registry_client: AsyncRegistryClient) -> TplBuild:
     return TplBuild.from_path(args.base_dir, registry_client=registry_client)
 
 
-async def main() -> int:
+async def amain() -> int:
     """Parse CLI options, setup logging, then invoke the requested utility"""
     utilities = {
         subcommand: utility_cls() for subcommand, utility_cls in ALL_UTILITIES.items()
@@ -161,5 +161,10 @@ async def main() -> int:
         return 2
 
 
+def main() -> int:
+    """Synchronous entry point"""
+    return asyncio.run(amain())
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    sys.exit(main())
