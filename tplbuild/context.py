@@ -17,11 +17,12 @@ if sys.version_info < (3, 9):
         """
 
         # pylint: disable=redefined-builtin,consider-using-f-string
-        def _create_header(self, info, format, encoding, errors):
+        @staticmethod
+        def _create_header(info, *args, **kwargs):
             """
             Patch create_header to correctly zero out dev numbers for non-devices.
             """
-            buf = super()._create_header(info, format, encoding, errors)
+            buf = tarfile.TarInfo._create_header(info, *args, **kwargs)
             assert len(buf) == 512
 
             if info.get("type") in (tarfile.CHRTYPE, tarfile.BLKTYPE):

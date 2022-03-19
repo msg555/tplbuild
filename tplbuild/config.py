@@ -280,9 +280,7 @@ class TplConfig(pydantic.BaseModel):
     #: A mapping of profile names to string-key template arguments to pass
     #:     to any documents rendered through Jinja for each profile. Defaults
     #:     to a single empty profile named 'default'.
-    profiles: Dict[str, Dict[str, Any]] = {
-        "default": {}
-    }
+    profiles: Dict[str, Dict[str, Any]] = {"default": {}}
     #: The name of the default profile to use. If this is empty
     #:     the first profile name from :attr:`profiles` will be used instead.
     default_profile: str = ""

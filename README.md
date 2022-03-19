@@ -13,6 +13,7 @@ tplbuild is a templated reproducible container build tool.
   * Prebuild all your base images for every configuration in a single command
   * Lower build time for developer's
   * Enables _hermetic_ top-level image builds
+  * Check if base images are up to date for CI
 * Support for fixed _source images_
   * Update to the latest source image with a single command
 * Base images and fixed source images enable reproducible builds
@@ -109,7 +110,7 @@ contexts:
       {% if env == "dev" %}!requirements-dev.txt{% endif %}
 ```
 
-##### Sample Dockerfile.tplbuild
+##### Sample Dockerfile
 
 ```
 # Define base image stage
