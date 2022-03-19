@@ -1,6 +1,7 @@
 .PHONY: format format-check pylint typecheck lint test docs build pypy-test pypy-live
-PYTHON := python3
-PLATFORM := linux/amd64
+PYTHON ?= python3
+PLATFORM ?= linux/amd64
+PROFILE ?= dev
 
 all: format lint test docs
 
@@ -41,4 +42,6 @@ pypi-live: build
     $(PYTHON) -m twine upload dist/*
 
 docker-%:
-	docker run --rm -v "${PWD}:/work" -w /work "$$(./bootstrap.sh base-lookup base-tplbuild)" make $*
+	@PROFILE=${PROFILE}
+	@PLATFORM=${PLATFORM}
+	docker run --rm -v "$${PWD}:/work" -w /work "$$(./bootstrap.sh base-lookup --platform "$${PLATFORM}" --profile "$${PROFILE}" base-tplbuild)" make $*

@@ -4,13 +4,23 @@ on:
     branches:
       - main
 jobs:
-  lint-test:
+  lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - name: Lint
       run: make docker-lint
-    - name: Test
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [dev, dev_3_9, dev_3_10]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Test ${{ matrix.profile }}
+      env:
+        PROFILE: ${{ matrix.profile }}
       run: make docker-test
 
   check-base:
