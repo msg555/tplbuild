@@ -42,14 +42,6 @@ base_image_name: docker.myorg.com/base-{stage_name}
 # use can be fully customized per stage as well.
 stage_image_name: msg555/{{ stage_name }}
 
-# Some stuff that should probably be user specific.
-# TODO: Decide how to manage project configuration with user configuration.
-registry:
-  ssl_context:
-    insecure: false
-    cafile: null
-    capath: null
-
 # List of platforms to build images for. This will default to [linux/amd64]
 # but will generate a warning in all cases if unset. This is meant to reduce
 # the amount of configuration to get started but long term projects should

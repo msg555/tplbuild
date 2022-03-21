@@ -414,7 +414,8 @@ class TplBuild:
                 )
             manifest_ref = manifest_ref.copy(update=dict(ref=descriptor.digest))
         except RegistryException as exc:
-            raise TplBuildException("Failed to lookup source image") from exc
+            raise
+            raise TplBuildException(f"Failed to lookup source image {repr(str(manifest_ref))}") from exc
 
         # Download the manifest
         try:

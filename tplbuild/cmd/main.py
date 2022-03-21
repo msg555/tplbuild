@@ -8,6 +8,7 @@ from typing import Callable, Dict, Mapping
 
 import yaml
 from aioregistry import AsyncRegistryClient, DockerCredentialStore
+from aioregistry.auth import default_credential_store, ChainedCredentialStore
 
 from tplbuild.cmd.base_build import BaseBuildUtility
 from tplbuild.cmd.base_lookup import BaseLookupUtility
@@ -154,13 +155,17 @@ def load_user_config(args) -> UserConfig:
 
 def create_registry_client(user_config: UserConfig) -> AsyncRegistryClient:
     """Create an AsyncRegistryClient context from the passed arguments."""
-    creds = None
+    creds = default_credential_store()
     if user_config.auth_file:
-        with open(user_config.auth_file, "r", encoding="utf-8") as fauth:
-            creds = DockerCredentialStore(json.load(fauth))
-    else:
-        # TODO: Load the default container auth
-        pass
+        try:
+            creds = ChainedCredentialStore(
+                DockerCredentialStore.from_file(user_config.auth_file),
+                creds,
+            )
+        except FileNotFoundError as exc:
+            raise TplBuildException(
+                f"could not open auth file {repr(user_config.auth_file)}"
+            ) from exc
 
     return AsyncRegistryClient(
         creds=creds,

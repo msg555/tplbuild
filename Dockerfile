@@ -1,10 +1,10 @@
-FROM python:{{ python_version }} AS base-tplbuild
+FROM docker.io/library/python:{{ python_version }} AS base-tplbuild
 
 RUN apt update \
  && apt install -y podman \
  && rm -rf /var/lib/apt/lists/*
 
-COPY --from=docker:dind /usr/local/bin/docker /bin/
+COPY --from=docker.io/library/docker:dind /usr/local/bin/docker /bin/
 
 WORKDIR /tplbuild
 
