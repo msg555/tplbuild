@@ -1,14 +1,17 @@
 import argparse
 import asyncio
-import json
 import logging
 import os
 import sys
 from typing import Callable, Dict, Mapping
 
 import yaml
-from aioregistry import AsyncRegistryClient, DockerCredentialStore
-from aioregistry.auth import default_credential_store, ChainedCredentialStore
+from aioregistry import (
+    AsyncRegistryClient,
+    ChainedCredentialStore,
+    DockerCredentialStore,
+    default_credential_store,
+)
 
 from tplbuild.cmd.base_build import BaseBuildUtility
 from tplbuild.cmd.base_lookup import BaseLookupUtility
