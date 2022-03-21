@@ -1,4 +1,5 @@
 import os
+import ssl
 from typing import Any, Dict, List, Literal, Optional
 
 import pydantic
@@ -124,14 +125,6 @@ class ClientConfig(pydantic.BaseModel):
     #: non-platform aware build configurations.
     platform: Optional[ClientCommand] = None
 
-    #: Maximum number of concurrent build jbs. If set to 0 this will be set to
-    #: `os.cpu_count()`. (TODO)
-    build_jobs: int = 4
-    #: Maximum number of concurrent push jobs.
-    push_jobs: int = 4
-    #: Maximum number of concurrent tag jobs.
-    tag_jobs: int = 32
-
     @pydantic.validator("build")
     def build_cmd_valid(cls, v):
         """Make sure build command is valid"""
@@ -162,30 +155,13 @@ class ClientConfig(pydantic.BaseModel):
         """Make sure platform command is valid"""
         return _validate_command(v, [])
 
-    @pydantic.validator("build_jobs")
-    def build_jobs_valid(cls, v):
-        """ensure build_jobs is non-negative"""
-        if v == 0:
-            return os.cpu_count()
-        if v < 0:
-            raise ValueError("build_jobs must be non-negative")
-        return v
 
-    @pydantic.validator("push_jobs")
-    def push_jobs_valid(cls, v):
-        """ensure push_jobs is positive"""
-        if v <= 0:
-            raise ValueError("push_jobs must be positive")
-        return v
-
-    @pydantic.validator("tag_jobs")
-    def tag_jobs_valid(cls, v):
-        """ensure tag_jobs is positive"""
-        if v <= 0:
-            raise ValueError("push_jobs must be positive")
-        return v
-
-
+UNSET_CLIENT_CONFIG = ClientConfig(
+    build=ClientCommand(args=[]),
+    tag=ClientCommand(args=[]),
+    push=ClientCommand(args=[]),
+    untag=ClientCommand(args=[]),
+)
 DOCKER_CLIENT_CONFIG = ClientConfig(
     build=ClientCommand(
         args=["docker", "build", "--tag", "{image}", "-"],
@@ -214,6 +190,61 @@ DOCKER_CLIENT_CONFIG = ClientConfig(
         ],
     ),
 )
+# build_platform makes podman incorrectly not allow build contexts to be
+# shared across architectures so is intentionally omitted here.
+PODMAN_CLIENT_CONFIG = ClientConfig(
+    build=ClientCommand(
+        args=["podman", "build", "--tag", "{image}", "-"],
+    ),
+    tag=ClientCommand(
+        args=["podman", "tag", "{source_image}", "{target_image}"],
+    ),
+    push=ClientCommand(
+        args=["podman", "push", "{image}"],
+    ),
+    untag=ClientCommand(
+        args=["podman", "rmi", "{image}"],
+    ),
+    platform=ClientCommand(
+        args=[
+            "podman",
+            "info",
+            "--format",
+            "{{{{ .Version.OsArch }}}}",
+        ],
+    ),
+)
+
+
+class UserSSLContext(pydantic.BaseModel):
+    """Custom SSL context used to contact registries"""
+
+    #: Disable SSL/TLS verification
+    insecure: bool = False
+    #: File path to load CA certificates to trust.
+    cafile: Optional[str] = None
+    #: Folder container CA certificate files to trust.
+    capath: Optional[str] = None
+    #: Raw certificate data to trust.
+    cadata: Optional[str] = None
+    #: If True default system certs will be loaded in addition to any certs
+    #: implied by `cafile`, `capath`, or `cadata`. Normally these will only be
+    #: loaded if those are all unset.
+    load_default_certs: bool = False
+
+    def create_context(self) -> ssl.SSLContext:
+        """Returns a SSLContext constructed from the passed options"""
+        ctx = ssl.create_default_context(
+            cafile=self.cafile,
+            capath=self.capath,
+            cadata=self.cadata,
+        )
+        if self.insecure:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        if self.load_default_certs:
+            ctx.load_default_certs()
+        return ctx
 
 
 class StageConfig(pydantic.BaseModel):
@@ -242,8 +273,74 @@ class StageConfig(pydantic.BaseModel):
         return v
 
 
+class UserConfig(pydantic.BaseModel):
+    """User settings controlling tplbuild behavior"""
+
+    #: Must be "1.0"
+    version: Literal["1.0"] = "1.0"
+    #: If :attr:`client` is None this field will be used to set the client
+    #: configuration. Supported values are currently "docker" and "podman".
+    #: If :attr:`client` is not None this field is ignored.
+    client_type: Literal["docker", "podman"] = "docker"
+    #: Client commands to use to perform different container actions. If unset
+    #: a default configuration will be provided based on the value of
+    #: :attr:`client_type`. If you wish to use a different builder or supply
+    #: additional arguments to the build this would be the place to do it.
+    client: ClientConfig = UNSET_CLIENT_CONFIG
+    #: Maximum number of concurrent build jbs. If set to 0 this will be set to
+    #: `os.cpu_count()`.
+    build_jobs: int = 0
+    #: Maximum number of concurrent push jobs.
+    push_jobs: int = 4
+    #: Maximum number of concurrent tag jobs.
+    tag_jobs: int = 8
+    #: Configure the SSL context used to contact registries. This only controls
+    #: accesses made by tplbuild itself. The client builder will need to be
+    #: configured separately.
+    ssl_context: UserSSLContext = UserSSLContext()
+    #: The path to the container auth configuration file to use when contacting
+    #: registries. By default this will check the default search paths and conform
+    #: to the syntax described in
+    #: https://github.com/containers/image/blob/main/docs/containers-auth.json.5.md.
+    auth_file: Optional[str] = None
+
+    @pydantic.validator("build_jobs", always=True)
+    def build_jobs_valid(cls, v):
+        """ensure build_jobs is non-negative"""
+        if v == 0:
+            return os.cpu_count()
+        if v < 0:
+            raise ValueError("build_jobs must be non-negative")
+        return v
+
+    @pydantic.validator("push_jobs")
+    def push_jobs_valid(cls, v):
+        """ensure push_jobs is positive"""
+        if v <= 0:
+            raise ValueError("push_jobs must be positive")
+        return v
+
+    @pydantic.validator("tag_jobs")
+    def tag_jobs_valid(cls, v):
+        """ensure tag_jobs is positive"""
+        if v <= 0:
+            raise ValueError("push_jobs must be positive")
+        return v
+
+    @pydantic.validator("client", always=True)
+    def default_replace_client(cls, v, values):
+        """replace client with client_type if unset"""
+        if v.build.args:
+            return v
+        if values["client_type"] == "docker":
+            return DOCKER_CLIENT_CONFIG
+        if values["client_type"] == "podman":
+            return PODMAN_CLIENT_CONFIG
+        raise ValueError("unexpected client_type")
+
+
 class TplConfig(pydantic.BaseModel):
-    """Top level config model for tplbuild"""
+    """Configuration settings for a single tplbuild project"""
 
     #: Must be "1.0"
     version: Literal["1.0"] = "1.0"
@@ -262,15 +359,6 @@ class TplConfig(pydantic.BaseModel):
     #: given stage_name. Like :attr:`base_image_name` the template is passed
     #: "stage_name", "profile", "and "platform" parameters.
     stage_push_name: str = "{{ stage_name}}"
-    #: Syntax header to include in rendered dockerfiles. This is useful if you
-    #: Syntax header to include in rendered dockerfiles. This is useful if you
-    #: e.g. want to make use of buildkit features not available by default.
-    dockerfile_syntax: Optional[str] = None
-    #: Client commands to use to perform different container actions. By
-    #: default this will use the standard docker interface. If you wish to
-    #: use a different builder or supply additional arguments to the build
-    #: this would be the place to do it.
-    client: ClientConfig = DOCKER_CLIENT_CONFIG
     #: List of platforms to build images for. This defaults to linux/amd64
     #:     but should be explicitly configured. Base images will be built
     #:     for each platform listed here allowing for top-level images to
@@ -300,6 +388,13 @@ class TplConfig(pydantic.BaseModel):
         """Ensure that platforms is non empty"""
         if not v:
             raise ValueError("platforms cannot be empty")
+        return v
+
+    @pydantic.validator("profiles")
+    def profile_not_empty(cls, v):
+        """Make sure there is at least one profile"""
+        if not v:
+            raise ValueError("profiles cannot be empty")
         return v
 
     @pydantic.validator("profiles")

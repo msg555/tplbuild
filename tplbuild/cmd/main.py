@@ -3,10 +3,10 @@ import asyncio
 import json
 import logging
 import os
-import ssl
 import sys
-from typing import Callable, Mapping
+from typing import Callable, Dict, Mapping
 
+import yaml
 from aioregistry import AsyncRegistryClient, DockerCredentialStore
 
 from tplbuild.cmd.base_build import BaseBuildUtility
@@ -16,6 +16,7 @@ from tplbuild.cmd.publish import PublishUtility
 from tplbuild.cmd.source_lookup import SourceLookupUtility
 from tplbuild.cmd.source_update import SourceUpdateUtility
 from tplbuild.cmd.utility import CliUtility
+from tplbuild.config import UserConfig
 from tplbuild.exceptions import TplBuildException
 from tplbuild.tplbuild import TplBuild
 
@@ -49,10 +50,10 @@ def setup_parser(
         help="Base directory for tplbuild",
     )
     parser.add_argument(
-        "--auth-config",
+        "--auth-file",
         required=False,
-        default=os.path.expanduser("~/.docker/config.json"),
-        help="Path to Docker credential config file",
+        default=None,
+        help="Path to the container auth file",
     )
     parser.add_argument(
         "--insecure",
@@ -74,7 +75,14 @@ def setup_parser(
         default=None,
         help="SSL context CA directory",
     )
-
+    parser.add_argument(
+        "--load-default-certs",
+        required=False,
+        const=True,
+        action="store_const",
+        default=False,
+        help="Load system default certs always",
+    )
     subparsers = parser.add_subparsers(
         required=True,
         dest="utility",
@@ -111,27 +119,62 @@ def setup_logging(verbose: int) -> None:
     )
 
 
-def create_registry_client(args) -> AsyncRegistryClient:
+def load_user_config(args) -> UserConfig:
+    """Load the user config."""
+    user_config_locations = {
+        os.path.join(args.base_dir, ".tplbuildconfig.yml"),
+        os.path.expanduser("~/.tplbuildconfig.yml"),
+    }
+    user_config_data: Dict = {}
+    for user_config_path in user_config_locations:
+        try:
+            with open(user_config_path, encoding="utf-8") as fconfig:
+                user_config_data.update(**yaml.safe_load(fconfig))
+        except FileNotFoundError:
+            continue
+        except (ValueError, TypeError, yaml.YAMLError) as exc:
+            raise TplBuildException(f"Failed to load user config: {exc}") from exc
+    try:
+        user_config = UserConfig(**user_config_data)
+    except ValueError as exc:
+        raise TplBuildException(f"Failed to load user config: {exc}") from exc
+
+    if args.auth_file:
+        user_config.auth_file = args.auth_file
+    if args.insecure:
+        user_config.ssl_context.insecure = True
+    if args.cafile:
+        user_config.ssl_context.cafile = args.cafile
+    if args.capath:
+        user_config.ssl_context.capath = args.capath
+    if args.load_default_certs:
+        user_config.ssl_context.load_default_certs = True
+    return user_config
+
+
+def create_registry_client(user_config: UserConfig) -> AsyncRegistryClient:
     """Create an AsyncRegistryClient context from the passed arguments."""
     creds = None
-    if args.auth_config:
-        with open(args.auth_config, "r", encoding="utf-8") as fauth:
+    if user_config.auth_file:
+        with open(user_config.auth_file, "r", encoding="utf-8") as fauth:
             creds = DockerCredentialStore(json.load(fauth))
+    else:
+        # TODO: Load the default container auth
+        pass
 
-    ssl_ctx = ssl.create_default_context(
-        cafile=args.cafile,
-        capath=args.capath,
+    return AsyncRegistryClient(
+        creds=creds,
+        ssl_context=user_config.ssl_context.create_context(),
     )
-    if args.insecure:
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
-
-    return AsyncRegistryClient(creds=creds, ssl_context=ssl_ctx)
 
 
-def create_tplbld(args, registry_client: AsyncRegistryClient) -> TplBuild:
+def create_tplbld(
+    args, user_config: UserConfig, registry_client: AsyncRegistryClient
+) -> TplBuild:
     """Create a TplBuild context from the passed arguments."""
-    return TplBuild.from_path(args.base_dir, registry_client=registry_client)
+    return TplBuild.from_path(
+        args.base_dir, user_config=user_config, registry_client=registry_client
+    )
 
 
 async def amain() -> int:
@@ -147,8 +190,9 @@ async def amain() -> int:
     setup_logging(args.verbose)
 
     try:
-        async with create_registry_client(args) as registry_client:
-            async with create_tplbld(args, registry_client) as tplbld:
+        user_config = load_user_config(args)
+        async with create_registry_client(user_config) as registry_client:
+            async with create_tplbld(args, user_config, registry_client) as tplbld:
                 return await utilities[args.utility].main(args, tplbld)
     except TplBuildException as exc:
         sys.stderr.write(f"{exc}\n")

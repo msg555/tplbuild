@@ -183,10 +183,11 @@ class BuildExecutor:
         self.tplbld = tplbld
         self.transient_prefix = "tplbuild"
 
-        self.client_config = tplbld.config.client
-        self.sem_build_jobs = asyncio.BoundedSemaphore(self.client_config.build_jobs)
-        self.sem_push_jobs = asyncio.BoundedSemaphore(self.client_config.push_jobs)
-        self.sem_tag_jobs = asyncio.BoundedSemaphore(self.client_config.tag_jobs)
+        user_config = tplbld.user_config
+        self.client_config = user_config.client
+        self.sem_build_jobs = asyncio.BoundedSemaphore(user_config.build_jobs)
+        self.sem_push_jobs = asyncio.BoundedSemaphore(user_config.push_jobs)
+        self.sem_tag_jobs = asyncio.BoundedSemaphore(user_config.tag_jobs)
 
     async def build(
         self,
@@ -430,9 +431,6 @@ class BuildExecutor:
     ) -> None:
         """Wrapper that executes the client command to start a build"""
 
-        if platform and self.client_config.build_platform is None:
-            raise TplBuildException("No platform build client command configured")
-
         async with self.sem_build_jobs:
             if context is None:
                 context = BuildContext(None, None, [])
@@ -455,8 +453,7 @@ class BuildExecutor:
 
             cmd = self.client_config.build
             params = {"image": image}
-            if platform:
-                assert self.client_config.build_platform is not None
+            if platform and self.client_config.build_platform:
                 cmd = self.client_config.build_platform
                 params["platform"] = platform
 

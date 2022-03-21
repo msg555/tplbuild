@@ -24,26 +24,26 @@
   "base": {
     "dev": {
       "base-tplbuild": {
-        "linux/amd64": "8a318544480a1262434084b892d29578f3195ea633c42103e9c6c45a102df134",
-        "linux/arm64": "fce48a79c64c4a5c4ba0507f5604165c08cb5efb224a979dbbc530e6c061e4a7"
+        "linux/amd64": "609ae74cf818a7c35bd0f010f700f7de2c268641b52729d8e2bf7b2232a64807",
+        "linux/arm64": "7166af6dc7b2f4ee24206f4b5ae24367542d901aa3b3f5ffce6cabe07429a015"
       }
     },
     "release": {
       "base-tplbuild": {
-        "linux/amd64": "ad231aba34b40bafdc86abf46189c4c8dcf37ea564adb7588d47ad341c9e0be5",
-        "linux/arm64": "149db40b8cf3d8e96ce5c47278e02b4453ec3c6e336b409a143ffdb1ff655808"
+        "linux/amd64": "8052af5a779c0d057464b6a507cdaf22aab5edb49c9337ca79c5dff1617ad9a6",
+        "linux/arm64": "70846855f49347b93b16ca4fa066112d1db3679dca55b41abb7345c1aed595ec"
       }
     },
     "dev_3_9": {
       "base-tplbuild": {
-        "linux/amd64": "b19c6992907b897edcbe84dc1103fffcdc115b7b9ffd1cbed61337069b61a1b1",
-        "linux/arm64": "f24398ff149931509e6241ed62b485af04d83175b3377e5dc12deb830092b773"
+        "linux/amd64": "cc41f8bac852ed288189bd94e21c1603fe9bb601d9cf04313c23e33529dc55be",
+        "linux/arm64": "8c39241fb15110599b983e8b59acb0e0e2dfb106507c0464be302272f3c51450"
       }
     },
     "dev_3_10": {
       "base-tplbuild": {
-        "linux/amd64": "6ff2c5602a5dbe1a4cd8c328166c84926e861fe515dc3dc152a1b4e85ad7dc4c",
-        "linux/arm64": "7323cedc5f9e1bf3f9882a2d67ff341dd3b81dc7c65dec0d2fa587c4a6a8b77c"
+        "linux/amd64": "7b087abfbbc6bc010e9c12293658c9ee571b070025daf442afec4df6513e294c",
+        "linux/arm64": "7a928fed94f5bc2da381c25b3459ee05f5644ba3603096821078ae0fefda6c29"
       }
     }
   }

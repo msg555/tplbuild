@@ -1,13 +1,15 @@
 FROM python:{{ python_version }} AS base-tplbuild
-PUSHCONTEXT base
+
+RUN apt update \
+ && apt install -y podman \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY --from=docker:dind /usr/local/bin/docker /bin/
 
 WORKDIR /tplbuild
 
-COPY . ./
+COPY --from=base . ./
 
-# TODO: use setuptools instead of requirements files
 RUN pip install -r requirements.txt {% if env == "dev" -%}-r requirements-dev.txt{%- endif %}
 
 

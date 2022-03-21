@@ -19,7 +19,7 @@ from aioregistry import (
 )
 
 from .arch import client_platform, normalize_platform, normalize_platform_string
-from .config import BuildData, StageConfig, TplConfig
+from .config import BuildData, StageConfig, TplConfig, UserConfig
 from .exceptions import (
     TplBuildException,
     TplBuildNoSourceImageException,
@@ -45,7 +45,11 @@ class TplBuild:
 
     @classmethod
     def from_path(
-        cls, base_dir: str, *, registry_client: Optional[AsyncRegistryClient] = None
+        cls,
+        base_dir: str,
+        *,
+        user_config: UserConfig,
+        registry_client: Optional[AsyncRegistryClient] = None,
     ) -> "TplBuild":
         """
         Create a TplBuild object from just the base directory. This will
@@ -64,15 +68,18 @@ class TplBuild:
         except FileNotFoundError:
             LOGGER.warning("No tplbuild.yml found, using default configuration")
             config = TplConfig()
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, yaml.YAMLError) as exc:
             raise TplBuildException(f"Failed to load configuration: {exc}") from exc
-        return TplBuild(base_dir, config, registry_client=registry_client)
+        return TplBuild(
+            base_dir, config, user_config=user_config, registry_client=registry_client
+        )
 
     def __init__(
         self,
         base_dir: str,
         config: TplConfig,
         *,
+        user_config: Optional[UserConfig] = None,
         registry_client: Optional[AsyncRegistryClient] = None,
     ) -> None:
         # pylint: disable=import-outside-toplevel,cyclic-import
@@ -80,6 +87,7 @@ class TplBuild:
 
         self.base_dir = base_dir
         self.config = config
+        self.user_config = user_config or UserConfig()
         self.planner = BuildPlanner()
         self.custom_client = bool(registry_client)
         self.registry_client = registry_client or AsyncRegistryClient()
