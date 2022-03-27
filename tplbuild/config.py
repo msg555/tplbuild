@@ -1,5 +1,6 @@
 import os
 import ssl
+import uuid
 from typing import Any, Dict, List, Literal, Optional
 
 import pydantic
@@ -109,6 +110,13 @@ class ClientConfig(pydantic.BaseModel):
     #: formatted with `source_image` and `target_image` as the source
     #: and target tag names, respectively.
     tag: ClientCommand
+    #: Pull command config. Arguments and environment values will be
+    #: formatted with `image` as the desired push image. If present
+    #: this command will be used to explicitly pull images and will be subject
+    #: to the same concurrency pool as push operations. Without this command
+    #: pulling images will be up to the builder which can lead to many
+    #: concurrent pulls potentially being rate limited by the registry.
+    pull: Optional[ClientCommand] = None
     #: Push command config. Arguments and environment values will be
     #: formatted with `image` as the desired push image.
     push: ClientCommand
@@ -133,12 +141,21 @@ class ClientConfig(pydantic.BaseModel):
     @pydantic.validator("build_platform")
     def build_platform_cmd_valid(cls, v):
         """Make sure build platform command is valid"""
+        if v is None:
+            return v
         return _validate_command(v, ["image", "platform"])
 
     @pydantic.validator("tag")
     def tag_cmd_valid(cls, v):
         """Make sure tag command is valid"""
         return _validate_command(v, ["source_image", "target_image"])
+
+    @pydantic.validator("pull")
+    def pull_cmd_valid(cls, v):
+        """Make sure pull command is valid"""
+        if v is None:
+            return v
+        return _validate_command(v, ["image"])
 
     @pydantic.validator("push")
     def push_cmd_valid(cls, v):
@@ -153,6 +170,8 @@ class ClientConfig(pydantic.BaseModel):
     @pydantic.validator("platform")
     def platform_cmd_valid(cls, v):
         """Make sure platform command is valid"""
+        if v is None:
+            return v
         return _validate_command(v, [])
 
 
@@ -174,6 +193,9 @@ DOCKER_CLIENT_CONFIG = ClientConfig(
     ),
     tag=ClientCommand(
         args=["docker", "tag", "{source_image}", "{target_image}"],
+    ),
+    pull=ClientCommand(
+        args=["docker", "pull", "{image}"],
     ),
     push=ClientCommand(
         args=["docker", "push", "{image}"],
@@ -198,6 +220,9 @@ PODMAN_CLIENT_CONFIG = ClientConfig(
     ),
     tag=ClientCommand(
         args=["podman", "tag", "{source_image}", "{target_image}"],
+    ),
+    pull=ClientCommand(
+        args=["podman", "pull", "{image}"],
     ),
     push=ClientCommand(
         args=["podman", "push", "{image}"],
@@ -437,3 +462,15 @@ class BuildData(pydantic.BaseModel):
     #: content hash. The content hash is taken as the non-symbolic hash of
     #: the base image build node.
     base: Dict[str, Dict[str, Dict[str, str]]] = {}
+    #: A string combined with the base image definition hashes to produce
+    #: the final hash for base images. This ensures that different projects
+    #: use disjoint hash spaces, that the base image keys bear no information
+    #: by themselves, and to force rebuilds by changing the salt.
+    hash_salt: str = ""
+
+    @pydantic.validator("hash_salt", always=True)
+    def default_profile_exists(cls, v):
+        """Fill in hash salt if not set"""
+        if not v:
+            return str(uuid.uuid4())
+        return v

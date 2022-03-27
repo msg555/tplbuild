@@ -1,4 +1,5 @@
 import argparse
+import uuid
 from typing import List
 
 from tplbuild.cmd.utility import CliUtility
@@ -34,6 +35,13 @@ class BaseBuildUtility(CliUtility):
             help="If set the digest for each source image will be updated",
         )
         parser.add_argument(
+            "--update-salt",
+            default=False,
+            const=True,
+            action="store_const",
+            help="Update salt forcing base images to be rebuilt",
+        )
+        parser.add_argument(
             "--check",
             required=False,
             const=True,
@@ -46,6 +54,9 @@ class BaseBuildUtility(CliUtility):
         images = set(args.image)
         profiles = args.profile or list(tplbld.config.profiles)
         platforms = args.platform or tplbld.config.platforms
+
+        if args.update_salt:
+            tplbld.build_data.hash_salt = str(uuid.uuid4())
 
         # Render all build stages
         stages_to_build: List[StageData] = []

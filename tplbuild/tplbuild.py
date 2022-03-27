@@ -518,6 +518,7 @@ class TplBuild:
                 functools.partial(
                     hash_graph,
                     (stage.image for stage in stages if stage.base_image),
+                    salt=self.build_data.hash_salt,
                     symbolic=False,
                 ),
             )

@@ -91,6 +91,7 @@ def visit_graph(
 def hash_graph(
     roots: Iterable[ImageDefinition],
     *,
+    salt: str = "",
     symbolic=True,
 ) -> Dict[ImageDefinition, str]:
     """
@@ -107,6 +108,7 @@ def hash_graph(
     def hash_node(image: ImageDefinition) -> None:
         hash_mapping[image] = json_hash(
             [
+                salt,
                 type(image).__name__,
                 image.local_hash_data(symbolic),
                 *(hash_mapping[dep] for dep in image.get_dependencies()),

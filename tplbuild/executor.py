@@ -211,6 +211,7 @@ class BuildExecutor:
         image_tag_map: Dict[ImageDefinition, str] = {}
         build_tasks: Dict[BuildOperation, Awaitable] = {}
         build_titles = _compute_titles(build_ops)
+        remote_pull_coros: Dict[str, Awaitable] = {}
 
         async def _build_single(build_op: BuildOperation, build_title: str):
 
@@ -243,6 +244,17 @@ class BuildExecutor:
                 if isinstance(build_op.image, ContextImage):
                     await self._build_context(primary_tag, build_op.image, build_title)
                 else:
+                    # Pull base images, source images
+                    if self.client_config.pull is not None:
+                        for remote_ref, remote_name in self._get_build_remote_deps(
+                            build_op
+                        ).items():
+                            if remote_ref not in remote_pull_coros:
+                                remote_pull_coros[remote_ref] = asyncio.create_task(
+                                    self.pull_image(remote_ref, remote_name)
+                                )
+                            await remote_pull_coros[remote_ref]
+
                     await self._build_work(
                         primary_tag, build_op, image_tag_map, build_title
                     )
@@ -363,6 +375,33 @@ class BuildExecutor:
             title,
             image.context,
         )
+
+    def _get_build_remote_deps(self, build_op: BuildOperation) -> Dict[str, str]:
+        """
+        Return a list of remotely stored images this build depends on.
+        """
+        result = {}
+        img = build_op.image
+
+        def _title_image(img):
+            if isinstance(img, BaseImage):
+                return f"{img.stage}:{img.profile}:{img.platform}"
+            assert isinstance(img, SourceImage)
+            return f"{img.repo}:{img.tag}:{img.platform}"
+
+        while img is not build_op.root:
+            if isinstance(img, CopyCommandImage):
+                if isinstance(img.context, (BaseImage, SourceImage)):
+                    result[self._name_image(img.context, {})] = _title_image(
+                        img.context
+                    )
+
+            img = img.parent  # type: ignore
+
+        if isinstance(img, (BaseImage, SourceImage)):
+            result[self._name_image(img, {})] = _title_image(img)
+
+        return result
 
     async def _build_work(
         self,
@@ -485,6 +524,17 @@ class BuildExecutor:
                 self.client_config.untag,
                 {"image": image},
             )
+
+    async def pull_image(self, image: str, title: str) -> None:
+        """Wrapper that executes the client pull command"""
+        assert self.client_config.pull is not None
+        async with self.sem_push_jobs:
+            async with self.tplbld.output_streamer.start_stream(title) as output_stream:
+                await _create_subprocess(
+                    self.client_config.pull,
+                    {"image": image},
+                    output_stream=output_stream,
+                )
 
     async def push_image(self, image: str, title: str) -> None:
         """Wrapper that executes the client push command"""
