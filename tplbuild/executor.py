@@ -6,6 +6,7 @@ import uuid
 from asyncio.subprocess import DEVNULL, PIPE
 from typing import AsyncIterable, Awaitable, Callable, Dict, List, Optional, Set
 
+import jinja2
 from aioregistry import (
     Descriptor,
     ManifestListV2S2,
@@ -37,6 +38,7 @@ LOGGER = logging.getLogger(__name__)
 
 async def _create_subprocess(
     cmd: ClientCommand,
+    jinja_env: jinja2.Environment,
     params: Dict[str, str],
     *,
     capture_output: bool = False,
@@ -47,9 +49,10 @@ async def _create_subprocess(
     Create a subprocess and process its streams.
     """
     env = dict(os.environ)
-    env.update(cmd.render_environment(params))
+    render_args, render_env = cmd.render(jinja_env, params)
+    env.update(render_env)
     proc = await asyncio.create_subprocess_exec(
-        *cmd.render_args(params),
+        *render_args,
         stdout=PIPE,
         stderr=PIPE,
         stdin=DEVNULL if input_data is None else PIPE,
@@ -490,20 +493,15 @@ class BuildExecutor:
                 finally:
                     pipe.close()
 
-            cmd = self.client_config.build
-            params = {"image": image}
-            if platform and self.client_config.build_platform:
-                cmd = self.client_config.build_platform
-                params["platform"] = platform
-
             async with self.tplbld.output_streamer.start_stream(title) as output_stream:
                 await asyncio.gather(
                     asyncio.get_running_loop().run_in_executor(
                         None, sync_write_context
                     ),
                     _create_subprocess(
-                        cmd,
-                        params,
+                        self.client_config.build,
+                        self.tplbld.jinja_env,
+                        dict(image=image, platform=platform),
                         output_stream=output_stream,
                         input_data=pipe_reader(),
                     ),
@@ -514,7 +512,8 @@ class BuildExecutor:
         async with self.sem_tag_jobs:
             await _create_subprocess(
                 self.client_config.tag,
-                {"source_image": source_image, "target_image": target_image},
+                self.tplbld.jinja_env,
+                dict(source_image=source_image, target_image=target_image),
             )
 
     async def untag_image(self, image: str) -> None:
@@ -522,7 +521,8 @@ class BuildExecutor:
         async with self.sem_tag_jobs:
             await _create_subprocess(
                 self.client_config.untag,
-                {"image": image},
+                self.tplbld.jinja_env,
+                dict(image=image),
             )
 
     async def pull_image(self, image: str, title: str) -> None:
@@ -532,7 +532,8 @@ class BuildExecutor:
             async with self.tplbld.output_streamer.start_stream(title) as output_stream:
                 await _create_subprocess(
                     self.client_config.pull,
-                    {"image": image},
+                    self.tplbld.jinja_env,
+                    dict(image=image),
                     output_stream=output_stream,
                 )
 
@@ -542,7 +543,8 @@ class BuildExecutor:
             async with self.tplbld.output_streamer.start_stream(title) as output_stream:
                 await _create_subprocess(
                     self.client_config.push,
-                    {"image": image},
+                    self.tplbld.jinja_env,
+                    dict(image=image),
                     output_stream=output_stream,
                 )
 
@@ -554,7 +556,11 @@ class BuildExecutor:
         if self.client_config.platform is None:
             return ""
 
-        output = await _create_subprocess(self.client_config.platform, {})
+        output = await _create_subprocess(
+            self.client_config.platform,
+            self.tplbld.jinja_env,
+            {},
+        )
         try:
             return output.decode("utf-8").strip()
         except UnicodeDecodeError as exc:

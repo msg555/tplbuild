@@ -57,16 +57,9 @@ profiles:
   dev:
     env: dev
     user: root
-    my_tags:
-      - myimage:latest
-      - myimage:dev
   release:
     env: release
     user: www-data
-    my_tags:
-      - myimage:latest
-    my_push_tags:
-      - myimage:v1.0.2
 
 # Defines the build contexts used in your images. If not present there will be
 # a single build context named "default" that points to the root build path
@@ -94,7 +87,7 @@ contexts:
   # a minimal build context for base images. For example this build context
   # ensures that we update the base images if and only if requirements.txt
   # changes.
-  base:
+  base-context:
     base_dir: .
     ignore: |
       *
@@ -107,16 +100,16 @@ contexts:
 ```
 # Define base image stage
 FROM python:3.8 AS base-myimage
-PUSHCONTEXT base
 
 WORKDIR /work
-COPY . ./
+COPY --from=base-context . ./
 RUN pip install -r requirements.txt {% if env == "dev" -%}-r requirements-dev.txt{%- endif %}
 
 
 # Define top level image stage.
 FROM base-myimage AS myimage
 
+USER {{ user }}
 COPY src ./mymodule
 COMMAND ["python", "-m", "mymodule"]
 ```

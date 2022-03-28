@@ -21,3 +21,8 @@ tplbuild module
    :members:
    :undoc-members:
    :show-inheritance:
+
+.. automodule:: tplbuild.config
+   :members:
+   :undoc-members:
+   :show-inheritance:

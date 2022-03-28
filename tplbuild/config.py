@@ -1,11 +1,14 @@
+import functools
 import os
 import ssl
 import uuid
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
+import jinja2
 import pydantic
+import yaml
 
-from .utils import format_simple
+from .exceptions import TplBuildException, TplBuildTemplateException
 
 RESERVED_PROFILE_KEYS = {
     "begin_stage",
@@ -47,20 +50,6 @@ class TplContextConfig(pydantic.BaseModel):
         return f".{os.path.sep}{os.path.normpath(os.path.join(os.path.sep, v))[1:]}"
 
 
-def _validate_command(cmd: "ClientCommand", params: List[str]) -> "ClientCommand":
-    """Helper function to validate command format strings"""
-    params_dict = {key: "" for key in params}
-    try:
-        cmd.render_args(params_dict)
-    except KeyError as exc:
-        raise ValueError("command args format invalid: str(exc)") from exc
-    try:
-        cmd.render_environment(params_dict)
-    except KeyError as exc:
-        raise ValueError("command environment format invalid: str(exc)") from exc
-    return cmd
-
-
 class ClientCommand(pydantic.BaseModel):
     """
     Configuration to invoke an external build command.
@@ -72,173 +61,111 @@ class ClientCommand(pydantic.BaseModel):
     use `str.format` for security reasons).
     """
 
-    #: Command and additional arguments to execute to perform the command.
-    args: List[str]
-    #: Additional environmental variables to pass to the command.
-    environment: Dict[str, str] = {}
+    #: A jinja template used to construct invoke arguments and environment
+    #: variables based on the template arguments passed. Depending on the
+    #: build command different template arguments may be passed. All templates
+    #: are passed an `args` list and an `environment` dict that they should
+    #: populate with the command arguments and environment variables used
+    #: to invoke the build command. The output of the template will be ignored.
+    template: str
 
-    def render_args(
+    def render(
         self,
+        jinja_env: jinja2.Environment,
         params: Dict[str, str],
-    ) -> List[str]:
+    ) -> Tuple[List[str], Dict[str, str]]:
         """Return the list of arguments after being rendered with the given params"""
-        return [format_simple(arg, **params) for arg in self.args]
+        args: List[str] = []
+        environment: Dict[str, str] = {}
 
-    def render_environment(self, params: Dict[str, str]) -> Dict[str, str]:
-        """Return the environment after being rendered with the given params"""
-        return {
-            key: format_simple(val, **params) for key, val in self.environment.items()
-        }
+        try:
+            for _ in jinja_env.from_string(self.template).generate(
+                **params,
+                args=args,
+                environment=environment,
+            ):
+                pass
+        except jinja2.TemplateError as exc:
+            raise TplBuildTemplateException(
+                "Failed to render command template"
+            ) from exc
+        if not args:
+            print(self.template)
+            raise TplBuildException("command template rendered no command arguments")
+        return args, environment
 
 
 class ClientConfig(pydantic.BaseModel):
     """
     Configuration of commands to perform various container operations. This is
     meant to be a generic interface that could plug into a variety of container
-    build systems. The defaults are suitable for a vanilla docker build.
+    build systems. Typically you can just set :attr:`UserConfig.client_type` to
+    select from preconfigured client configurations.
     """
 
-    #: Build command config. Arguments and environment values will
-    #: be formatted with `image` as the desired build tag.
+    #: Build command config template. This should render an appropriate command
+    #: to build an image using a dockerfile named "Dockerfile" and build
+    #: context provided by stdin. The output should be tagged as the passed
+    #: argument `image`.
+    #:
+    #: Arguments:
+    #:   image: str - The image name to tag the output
+    #:   platform: str? - The build platform to use if known.
     build: ClientCommand
-    #: Platform aware build command config. Arguments and environment
-    #: values will be formatted with `image` as the desired build tag
-    #: and `platform` as the desired build platform. This must be configured
-    #: when doing platform aware builds.
-    build_platform: Optional[ClientCommand] = None
-    #: Tag command config. Arguments and evnrionment values will be
-    #: formatted with `source_image` and `target_image` as the source
-    #: and target tag names, respectively.
+    #: Tag command config template. This should tag an existing image with
+    #: a new image name.
+    #:
+    #: Arguments:
+    #:   source_image: str - The source image name
+    #:   dest_image: str - The new name to tag `source_image` as
     tag: ClientCommand
-    #: Pull command config. Arguments and environment values will be
-    #: formatted with `image` as the desired push image. If present
-    #: this command will be used to explicitly pull images and will be subject
-    #: to the same concurrency pool as push operations. Without this command
-    #: pulling images will be up to the builder which can lead to many
-    #: concurrent pulls potentially being rate limited by the registry.
+    #: Pull command config template. This should pull the named image from
+    #: the remote registry into local storage.
+    #:
+    #: Arguments:
+    #:   image: str - The name of the image to pull
     pull: Optional[ClientCommand] = None
-    #: Push command config. Arguments and environment values will be
-    #: formatted with `image` as the desired push image.
+    #: Push command config template. This should push the named image to
+    #: the remote registry from local storage.
+    #:
+    #: Arguments:
+    #:   image: str - The name of the image to push
     push: ClientCommand
-    #: Untag command config. Arguments and environment values will be
-    #: formatted with `image` as the desired tag to remove. This is
-    #: necessary for anonymous build stages generated by tplbuild that
-    #: carry a temporary tag to avoid being reclaimed by the underlying
-    #: container engine during a build.
+    #: Un-tag command config template. This should untag the named image
+    #: allowing data referenced by the image to be reclaimed.
+    #:
+    #: Arguments:
+    #:   image: str - The name of the image to untag
     untag: ClientCommand
-    #: Print the default build platform. If this is not set then the
-    #: default build platform will be calculated using the local
+    #: Command that should print out the default build platform for the client.
+    #: This template is passed no additional arguments. If this command is not
+    #: available the default build platform will be calculated using the local
     #: client platform instead. The output will be normalized to convert
-    #: e.g. "linux/x64_64" to "linux/amd64". Will not be used for
-    #: non-platform aware build configurations.
+    #: e.g. "linux/x64_64" to "linux/amd64". This will only be used for
+    #: platform aware build configurations.
     platform: Optional[ClientCommand] = None
-
-    @pydantic.validator("build")
-    def build_cmd_valid(cls, v):
-        """Make sure build command is valid"""
-        return _validate_command(v, ["image"])
-
-    @pydantic.validator("build_platform")
-    def build_platform_cmd_valid(cls, v):
-        """Make sure build platform command is valid"""
-        if v is None:
-            return v
-        return _validate_command(v, ["image", "platform"])
-
-    @pydantic.validator("tag")
-    def tag_cmd_valid(cls, v):
-        """Make sure tag command is valid"""
-        return _validate_command(v, ["source_image", "target_image"])
-
-    @pydantic.validator("pull")
-    def pull_cmd_valid(cls, v):
-        """Make sure pull command is valid"""
-        if v is None:
-            return v
-        return _validate_command(v, ["image"])
-
-    @pydantic.validator("push")
-    def push_cmd_valid(cls, v):
-        """Make sure push command is valid"""
-        return _validate_command(v, ["image"])
-
-    @pydantic.validator("untag")
-    def untag_cmd_valid(cls, v):
-        """Make sure untag command is valid"""
-        return _validate_command(v, ["image"])
-
-    @pydantic.validator("platform")
-    def platform_cmd_valid(cls, v):
-        """Make sure platform command is valid"""
-        if v is None:
-            return v
-        return _validate_command(v, [])
 
 
 UNSET_CLIENT_CONFIG = ClientConfig(
-    build=ClientCommand(args=[]),
-    tag=ClientCommand(args=[]),
-    push=ClientCommand(args=[]),
-    untag=ClientCommand(args=[]),
+    build=ClientCommand(template=""),
+    tag=ClientCommand(template=""),
+    push=ClientCommand(template=""),
+    untag=ClientCommand(template=""),
 )
-DOCKER_CLIENT_CONFIG = ClientConfig(
-    build=ClientCommand(
-        args=["docker", "build", "--tag", "{image}", "-"],
-    ),
-    build_platform=ClientCommand(
-        args=["docker", "build", "--tag", "{image}", "-"],
-        environment={
-            "DOCKER_DEFAULT_PLATFORM": "{platform}",
-        },
-    ),
-    tag=ClientCommand(
-        args=["docker", "tag", "{source_image}", "{target_image}"],
-    ),
-    pull=ClientCommand(
-        args=["docker", "pull", "{image}"],
-    ),
-    push=ClientCommand(
-        args=["docker", "push", "{image}"],
-    ),
-    untag=ClientCommand(
-        args=["docker", "rmi", "{image}"],
-    ),
-    platform=ClientCommand(
-        args=[
-            "docker",
-            "info",
-            "--format",
-            "{{{{ .OSType }}}}/{{{{ .Architecture }}}}",
-        ],
-    ),
-)
-# build_platform makes podman incorrectly not allow build contexts to be
-# shared across architectures so is intentionally omitted here.
-PODMAN_CLIENT_CONFIG = ClientConfig(
-    build=ClientCommand(
-        args=["podman", "build", "--tag", "{image}", "-"],
-    ),
-    tag=ClientCommand(
-        args=["podman", "tag", "{source_image}", "{target_image}"],
-    ),
-    pull=ClientCommand(
-        args=["podman", "pull", "{image}"],
-    ),
-    push=ClientCommand(
-        args=["podman", "push", "{image}"],
-    ),
-    untag=ClientCommand(
-        args=["podman", "rmi", "{image}"],
-    ),
-    platform=ClientCommand(
-        args=[
-            "podman",
-            "info",
-            "--format",
-            "{{{{ .Version.OsArch }}}}",
-        ],
-    ),
-)
+
+
+@functools.lru_cache
+def get_builtin_configs() -> Dict[str, ClientConfig]:
+    """
+    Return a cached mapping of preconfigured clients.
+    """
+    path = os.path.join(os.path.dirname(__file__), "builtin_clients.yml")
+    with open(path, "r", encoding="utf-8") as fdata:
+        configs = yaml.safe_load(fdata)
+    return {
+        config_name: ClientConfig(**config_data)
+        for config_name, config_data in configs.items()
+    }
 
 
 class UserSSLContext(pydantic.BaseModel):
@@ -306,7 +233,7 @@ class UserConfig(pydantic.BaseModel):
     #: If :attr:`client` is None this field will be used to set the client
     #: configuration. Supported values are currently "docker" and "podman".
     #: If :attr:`client` is not None this field is ignored.
-    client_type: Literal["docker", "podman"] = "docker"
+    client_type: str = "docker"
     #: Client commands to use to perform different container actions. If unset
     #: a default configuration will be provided based on the value of
     #: :attr:`client_type`. If you wish to use a different builder or supply
@@ -355,13 +282,13 @@ class UserConfig(pydantic.BaseModel):
     @pydantic.validator("client", always=True)
     def default_replace_client(cls, v, values):
         """replace client with client_type if unset"""
-        if v.build.args:
+        if v.build.template:
             return v
-        if values["client_type"] == "docker":
-            return DOCKER_CLIENT_CONFIG
-        if values["client_type"] == "podman":
-            return PODMAN_CLIENT_CONFIG
-        raise ValueError("unexpected client_type")
+        client_type = values["client_type"]
+        v = get_builtin_configs().get(client_type)
+        if v is None:
+            raise ValueError(f"no builtin client type named {repr(client_type)}")
+        return v
 
 
 class TplConfig(pydantic.BaseModel):

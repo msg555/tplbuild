@@ -1,0 +1,41 @@
+docker:
+  build:
+    template: |
+      {{ args.extend(["docker", "build", "--tag", image, "-"]) }}
+      {% if platform %}
+        {{ environment.update({"DOCKER_DEFAULT_PLATFORM": platform}) }}
+      {% endif %}
+  tag:
+    template: |
+      {{ args.extend(["docker", "tag", source_image, target_image]) }}
+  pull:
+    template: |
+      {{ args.extend(["docker", "pull", image]) }}
+  push:
+    template: |
+      {{ args.extend(["docker", "push", image]) }}
+  untag:
+    template: |
+      {{ args.extend(["docker", "rmi", image]) }}
+  platform:
+    template: |
+      {{ args.extend(["docker", "info", "--format", "{{ .OSType }}/{{ .Architecture }}"]) }}
+podman:
+  build:
+    template: |
+      {{ args.extend(["podman", "build", "--tag", image, "-"]) }}
+  tag:
+    template: |
+      {{ args.extend(["podman", "tag", source_image, target_image]) }}
+  pull:
+    template: |
+      {{ args.extend(["podman", "pull", image]) }}
+  push:
+    template: |
+      {{ args.extend(["podman", "push", image]) }}
+  untag:
+    template: |
+      {{ args.extend(["podman", "rmi", image]) }}
+  platform:
+    template: |
+      {{ args.extend(["podman", "info", "--format", "{{ .Version.OsArch }}"]) }}

@@ -4,42 +4,6 @@ import tempfile
 from typing import Iterable, List, Tuple
 
 
-def format_simple(fmt: str, **params) -> str:
-    """
-    Do format replacements using a scheme similar to str.format except
-    only support simple keyword substitutions.
-    """
-    result = []
-    in_braces = False
-    pos = 0
-    i = 0
-    while i < len(fmt):
-        ch = fmt[i]
-        i += 1
-
-        if in_braces:
-            if ch == "}":
-                in_braces = False
-                key = fmt[pos : i - 1].strip()
-                pos = i
-                result.append(str(params[key]))
-            continue
-
-        if fmt[i - 1 : i + 1] in ("{{", "}}"):
-            result.append(fmt[pos:i])
-            i += 1
-            pos = i
-            continue
-
-        if ch == "{":
-            result.append(fmt[pos : i - 1])
-            pos = i
-            in_braces = True
-
-    result.append(fmt[pos:])
-    return "".join(result)
-
-
 def line_reader(document: str) -> Iterable[Tuple[int, str]]:
     """
     Yield lines from `document`. Lines will have leading and trailing whitespace

@@ -1,6 +1,6 @@
 import pytest
 
-from .utils import format_simple, line_reader
+from .utils import line_reader
 
 
 @pytest.mark.unit
@@ -26,29 +26,3 @@ def test_line_reader():
     assert list(line_reader("hi \\\n # comment\nthere")) == [(2, "hi there")]
     assert list(line_reader("hi \\\n # comment \\\nthere")) == [(2, "hi there")]
     assert not list(line_reader("\n\n\n"))
-
-
-@pytest.mark.unit
-def test_format_simple():
-    """Test simple str.format fill-in works correctly"""
-
-    assert format_simple("hello world") == "hello world"
-    assert format_simple("he{{llo wor}}ld") == "he{llo wor}ld"
-    assert format_simple("he{cool}ld", cool="beans") == "hebeansld"
-    assert format_simple("he{ cool}ld", cool="beans") == "hebeansld"
-    assert format_simple("he{cool }ld", cool="beans") == "hebeansld"
-    assert format_simple("he{ cool }ld", cool="beans") == "hebeansld"
-
-    with pytest.raises(KeyError):
-        format_simple("did not pass {bar} field", foo="hi")
-
-    # No nested expansions
-    assert format_simple("{foo}{bar}", foo="{bar}", bar="{foo}") == "{bar}{foo}"
-
-    with pytest.raises(KeyError):
-        format_simple("cannot do {foo.__class__}", foo="hi")
-
-    assert (
-        format_simple("can do {foo.__class__}", **{"foo.__class__": "this"})
-        == "can do this"
-    )
