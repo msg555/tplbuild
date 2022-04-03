@@ -375,6 +375,18 @@ class TplConfig(pydantic.BaseModel):
         return v
 
 
+class BaseImageBuildData(pydantic.BaseModel):
+    """
+    Stores content addressed keys used to store and retrieve base images
+    from the remote registry.
+    """
+
+    #: The hash of all inputs that go into defining the image build definition.
+    build_hash: str
+    #: The image digest stored in the registry.
+    image_digest: str
+
+
 class BuildData(pydantic.BaseModel):
     """
     Any build data that is managed by tplbuild itself rather than being
@@ -386,9 +398,8 @@ class BuildData(pydantic.BaseModel):
     #: Mapping of repo -> tag -> platform -> source image manifest digest.
     source: Dict[str, Dict[str, Dict[str, str]]] = {}
     #: Mapping of profile -> stage_name -> platform -> cached base image
-    #: content hash. The content hash is taken as the non-symbolic hash of
-    #: the base image build node.
-    base: Dict[str, Dict[str, Dict[str, str]]] = {}
+    #: build data.
+    base: Dict[str, Dict[str, Dict[str, BaseImageBuildData]]] = {}
     #: A string combined with the base image definition hashes to produce
     #: the final hash for base images. This ensures that different projects
     #: use disjoint hash spaces, that the base image keys bear no information

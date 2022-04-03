@@ -196,7 +196,9 @@ class BuildExecutor:
         self,
         build_ops: List[BuildOperation],
         *,
-        complete_callback: Optional[Callable[[BuildOperation, str], None]] = None,
+        complete_callback: Optional[
+            Callable[[BuildOperation, str], Awaitable[None]]
+        ] = None,
     ) -> None:
         """
         Build each of the passed build ops and tag/push all images.
@@ -206,7 +208,7 @@ class BuildExecutor:
                 operations should be topologically sorted (every build operation
                 should be listed after all of its dependencies).
             complete_callback: If present this callback will be invoked for each
-                build operation as `complete_callback(build_op, primary_tag)`.
+                build operation as `await complete_callback(build_op, primary_tag)`.
                 Note for multi platform images the 'primary_tag' will just be the
                 first push tag.
         """
@@ -276,7 +278,7 @@ class BuildExecutor:
                         await self.push_image(tag, build_title)
 
             if complete_callback:
-                complete_callback(build_op, primary_tag)
+                await complete_callback(build_op, primary_tag)
 
         build_tasks.update(
             (build_op, asyncio.create_task(_build_single(build_op, build_title)))
@@ -460,7 +462,7 @@ class BuildExecutor:
             assert image.digest is not None
             return f"{image.repo}@{image.digest}"
         if isinstance(image, BaseImage):
-            return self.tplbld.get_base_image_name(image)
+            return self.tplbld.get_base_image_name(image, use_digest=True)
         raise AssertionError("unexpected image type")
 
     async def client_build(

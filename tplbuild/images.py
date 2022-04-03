@@ -163,6 +163,7 @@ class BaseImage(ImageDefinition):
         content_hash: The conent hash of the base image. Typically this is
             supplied from tplbuild's cached build data and is used to find
             the base image from an external repository.
+        digest: The digest of the image as stored in the registry.
     """
 
     profile: str
@@ -170,6 +171,7 @@ class BaseImage(ImageDefinition):
     platform: str
     image: Optional[ImageDefinition] = None
     content_hash: Optional[str] = None
+    digest: Optional[str] = None
 
     def get_dependencies(self) -> List[ImageDefinition]:
         return [self.image] if self.image else []

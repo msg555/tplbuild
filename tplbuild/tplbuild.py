@@ -19,7 +19,7 @@ from aioregistry import (
 )
 
 from .arch import client_platform, normalize_platform, normalize_platform_string
-from .config import BuildData, StageConfig, TplConfig, UserConfig
+from .config import BaseImageBuildData, BuildData, StageConfig, TplConfig, UserConfig
 from .exceptions import (
     TplBuildException,
     TplBuildNoSourceImageException,
@@ -143,7 +143,12 @@ class TplBuild:
                 ) from exc
             raise TplBuildTemplateException("Failed to render template") from exc
 
-    def get_base_image_name(self, base_image: BaseImage) -> str:
+    def get_base_image_name(
+        self,
+        base_image: BaseImage,
+        *,
+        use_digest: bool = False,
+    ) -> str:
         """
         Return the base image name by rendering the base image name
         config template.
@@ -151,20 +156,21 @@ class TplBuild:
         if self.config.base_image_name is None:
             raise TplBuildException("Must configure base_image_name to use base images")
         try:
-            return (
-                self.jinja_render(
-                    self.config.base_image_name,
-                    dict(
-                        stage_name=base_image.stage,
-                        profile=base_image.profile,
-                        platform=base_image.platform,
-                    ),
-                )
-                + f":{base_image.content_hash}"
+            base_image_repo = self.jinja_render(
+                self.config.base_image_name,
+                dict(
+                    stage_name=base_image.stage,
+                    profile=base_image.profile,
+                    platform=base_image.platform,
+                ),
             )
         except TplBuildTemplateException as exc:
             exc.update_message("Failed to render base image name template")
             raise exc
+
+        if use_digest:
+            return f"{base_image_repo}@{base_image.digest}"
+        return f"{base_image_repo}:{base_image.content_hash}"
 
     def get_stage_config(
         self, stage_name: str, profile: str, platform: str
@@ -238,14 +244,18 @@ class TplBuild:
             raise TplBuildException("No base image repo format configured")
 
         profile = profile or self.default_profile
-        cached_content_hash = self.build_data.base[profile][stage_name][platform]
+        cached_build_data = self.build_data.base[profile][stage_name][platform]
         image = BaseImage(
             profile=profile,
             stage=stage_name,
             platform=platform,
-            content_hash=cached_content_hash,
+            content_hash=cached_build_data.build_hash,
+            digest=cached_build_data.image_digest,
         )
-        return self.get_base_image_name(image), image
+        return (
+            self.get_base_image_name(image, use_digest=True),
+            image,
+        )
 
     @property
     def default_profile(self) -> str:
@@ -346,7 +356,7 @@ class TplBuild:
                 be the return value from :meth:`plan`.
         """
 
-        def complete_callback(build_op: BuildOperation, primary_tag: str) -> None:
+        async def complete_callback(build_op: BuildOperation, primary_tag: str) -> None:
             """
             Update our internal build data cache for base images.
             """
@@ -354,11 +364,27 @@ class TplBuild:
             for stage in build_op.stages:
                 if stage.base_image:
                     assert stage.base_image.content_hash is not None
+                    try:
+                        descriptor = await self.registry_client.ref_lookup(
+                            parse_image_name(self.get_base_image_name(stage.base_image))
+                        )
+                    except RegistryException as exc:
+                        raise TplBuildException(
+                            "Could not find pushed base image in registry"
+                        ) from exc
+                    if descriptor is None:
+                        raise TplBuildException(
+                            "Could not find pushed base image in registry"
+                        )
+
                     self.build_data.base.setdefault(
                         stage.base_image.profile, {}
                     ).setdefault(stage.base_image.stage, {})[
                         stage.base_image.platform
-                    ] = stage.base_image.content_hash
+                    ] = BaseImageBuildData(
+                        build_hash=stage.base_image.content_hash,
+                        image_digest=descriptor.digest,
+                    )
 
                 # Save base images as soon as their done in case the build
                 # is later interrupted.
@@ -536,43 +562,49 @@ class TplBuild:
                 ]
 
                 for base_image in base_images:
-                    cached_content_hash = (
+                    cached_build_data = (
                         self.build_data.base.get(base_image.profile, {})
                         .get(base_image.stage, {})
                         .get(base_image.platform)
+                    )
+                    cached_content_hash = (
+                        cached_build_data.build_hash if cached_build_data else None
                     )
 
                     assert base_image.image
                     if full_hash_mapping[base_image.image] != cached_content_hash:
                         try:
-                            manifest_ref = parse_image_name(
-                                self.get_base_image_name(base_image)
+                            descriptor = await self.registry_client.ref_lookup(
+                                parse_image_name(self.get_base_image_name(base_image))
                             )
-                            if await self.registry_client.ref_lookup(manifest_ref):
-                                self.build_data.base.setdefault(
-                                    base_image.profile, {}
-                                ).setdefault(base_image.stage, {})[
-                                    base_image.platform
-                                ] = full_hash_mapping[
-                                    base_image.image
-                                ]
-                                LOGGER.info(
-                                    "Updating base image %s:%s:%s from registry",
-                                    base_image.stage,
-                                    base_image.profile,
-                                    base_image.platform,
-                                )
-                                self.save_build_data()
                         except RegistryException as exc:
                             raise TplBuildException(
                                 "Failed to lookup base image in registry"
                             ) from exc
 
+                        if descriptor:
+                            self.build_data.base.setdefault(
+                                base_image.profile, {}
+                            ).setdefault(base_image.stage, {})[
+                                base_image.platform
+                            ] = BaseImageBuildData(
+                                build_hash=full_hash_mapping[base_image.image],
+                                image_digest=descriptor.digest,
+                            )
+
+                            LOGGER.info(
+                                "Updating base image %s:%s:%s from registry",
+                                base_image.stage,
+                                base_image.profile,
+                                base_image.platform,
+                            )
+                            self.save_build_data()
+
         def _resolve_base(image: ImageDefinition) -> ImageDefinition:
             if not isinstance(image, BaseImage):
                 return image
 
-            cached_content_hash = (
+            cached_build_data = (
                 self.build_data.base.get(image.profile, {})
                 .get(image.stage, {})
                 .get(image.platform)
@@ -584,15 +616,20 @@ class TplBuild:
                         "Attempt to dereference base image that has no image definition"
                     )
 
-                if full_hash_mapping[image.image] != cached_content_hash:
+                if (
+                    cached_build_data is None
+                    or full_hash_mapping[image.image] != cached_build_data.build_hash
+                ):
                     return image.image
 
-            image.image = None
-            image.content_hash = cached_content_hash
-            if image.content_hash is None:
+            if cached_build_data is None:
                 raise TplBuildException(
                     f"No cached build of {image.profile}/{image.stage}"
                 )
+
+            image.image = None
+            image.content_hash = cached_build_data.build_hash
+            image.digest = cached_build_data.image_digest
 
             return image
 
