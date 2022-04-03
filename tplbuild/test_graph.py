@@ -88,7 +88,7 @@ def test_visit_graph_generate():
 
     visit_mock = Mock(side_effect=lambda img: img)
     visit_graph(result, visit_mock)
-    assert visit_mock.call_count == 2 ** 11 - 1
+    assert visit_mock.call_count == 2**11 - 1
 
     def visit_update(image: ImageDefinition) -> ImageDefinition:
         assert isinstance(image, ImageTestNode)
@@ -106,7 +106,7 @@ def test_visit_graph_generate():
 
     visit_mock.reset_mock()
     visit_graph(result, visit_mock)
-    assert visit_mock.call_count == 2 ** 11 - 1
+    assert visit_mock.call_count == 2**11 - 1
 
 
 @pytest.mark.unit

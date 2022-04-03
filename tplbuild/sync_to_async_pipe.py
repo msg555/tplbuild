@@ -14,7 +14,7 @@ class SyncToAsyncPipe:
         buf_max: The maximum number of bytes that that can be buffered in the pipe.
     """
 
-    def __init__(self, loop=None, *, buf_max=2 ** 16) -> None:
+    def __init__(self, loop=None, *, buf_max=2**16) -> None:
         if loop is None:
             loop = asyncio.get_running_loop()
         self.loop = loop
