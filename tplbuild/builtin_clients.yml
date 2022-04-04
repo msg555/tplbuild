@@ -24,6 +24,9 @@ podman:
   build:
     template: |
       {{ args.extend(["podman", "build", "--tag", image, "-"]) }}
+      {% if platform %}
+        {{ args.extend(["--platform", platform]) }}
+      {% endif %}
   tag:
     template: |
       {{ args.extend(["podman", "tag", source_image, target_image]) }}
@@ -39,3 +42,28 @@ podman:
   platform:
     template: |
       {{ args.extend(["podman", "info", "--format", "{{ .Version.OsArch }}"]) }}
+buildx:
+  build:
+    template: |
+      {{ args.extend(["docker", "buildx", "build", "--tag", image, "-"]) }}
+      {% if platform %}
+        {{ args.extend(["--platform", platform]) }}
+      {% endif %}
+      {% for dep in dependencies %}
+        {{ args.append("--build-context=" + dep + "=docker-image://" + dep) }}
+      {% endfor %}
+  tag:
+    template: |
+      {{ args.extend(["docker", "tag", source_image, target_image]) }}
+  pull:
+    template: |
+      {{ args.extend(["docker", "pull", image]) }}
+  push:
+    template: |
+      {{ args.extend(["docker", "push", image]) }}
+  untag:
+    template: |
+      {{ args.extend(["docker", "rmi", image]) }}
+  platform:
+    template: |
+      {{ args.extend(["docker", "info", "--format", "{{ .OSType }}/{{ .Architecture }}"]) }}

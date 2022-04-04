@@ -195,9 +195,13 @@ class ContextImage(StageDefinedImage):
     """Image node representing a build context"""
 
     context: BuildContext
+    platform: str
 
-    def local_hash_data(self, symbolic: bool) -> str:
-        return self.context.symbolic_hash if symbolic else self.context.full_hash
+    def local_hash_data(self, symbolic: bool) -> Any:
+        return [
+            self.platform,
+            self.context.symbolic_hash if symbolic else self.context.full_hash,
+        ]
 
 
 @dataclass(eq=False)

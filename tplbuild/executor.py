@@ -4,7 +4,17 @@ import os
 import sys
 import uuid
 from asyncio.subprocess import DEVNULL, PIPE
-from typing import AsyncIterable, Awaitable, Callable, Dict, List, Optional, Set
+from typing import (
+    Any,
+    AsyncIterable,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+)
 
 import jinja2
 from aioregistry import (
@@ -39,7 +49,7 @@ LOGGER = logging.getLogger(__name__)
 async def _create_subprocess(
     cmd: ClientCommand,
     jinja_env: jinja2.Environment,
-    params: Dict[str, str],
+    params: Dict[str, Any],
     *,
     capture_output: bool = False,
     output_stream: Optional[OutputStream] = None,
@@ -250,10 +260,11 @@ class BuildExecutor:
                     await self._build_context(primary_tag, build_op.image, build_title)
                 else:
                     # Pull base images, source images
+                    remote_deps, local_deps = self._get_build_deps(
+                        build_op, image_tag_map
+                    )
                     if self.client_config.pull is not None:
-                        for remote_ref, remote_name in self._get_build_remote_deps(
-                            build_op
-                        ).items():
+                        for remote_ref, remote_name in remote_deps.items():
                             if remote_ref not in remote_pull_coros:
                                 remote_pull_coros[remote_ref] = asyncio.create_task(
                                     self.pull_image(remote_ref, remote_name)
@@ -261,7 +272,7 @@ class BuildExecutor:
                             await remote_pull_coros[remote_ref]
 
                     await self._build_work(
-                        primary_tag, build_op, image_tag_map, build_title
+                        primary_tag, build_op, local_deps, image_tag_map, build_title
                     )
 
                 if not tags:
@@ -375,17 +386,22 @@ class BuildExecutor:
         """
         await self.client_build(
             tag,
-            "",
+            image.platform,
             b"FROM scratch\nCOPY . /\n",
             title,
-            image.context,
+            context=image.context,
         )
 
-    def _get_build_remote_deps(self, build_op: BuildOperation) -> Dict[str, str]:
+    def _get_build_deps(
+        self,
+        build_op: BuildOperation,
+        image_tag_map: Dict[ImageDefinition, str],
+    ) -> Tuple[Dict[str, str], Set[str]]:
         """
         Return a list of remotely stored images this build depends on.
         """
-        result = {}
+        remote_deps = {}
+        local_deps = set()
         img = build_op.image
 
         def _title_image(img):
@@ -395,23 +411,31 @@ class BuildExecutor:
             return f"{img.repo}:{img.tag}:{img.platform}"
 
         while img is not build_op.root:
-            if isinstance(img, CopyCommandImage):
+            if (
+                isinstance(img, CopyCommandImage)
+                and img.context is not build_op.inline_context
+            ):
+                image_name = self._name_image(img.context, image_tag_map)
                 if isinstance(img.context, (BaseImage, SourceImage)):
-                    result[self._name_image(img.context, {})] = _title_image(
-                        img.context
-                    )
+                    remote_deps[image_name] = _title_image(img.context)
+                else:
+                    local_deps.add(image_name)
 
             img = img.parent  # type: ignore
 
+        image_name = self._name_image(img, image_tag_map)
         if isinstance(img, (BaseImage, SourceImage)):
-            result[self._name_image(img, {})] = _title_image(img)
+            remote_deps[image_name] = _title_image(img)
+        else:
+            local_deps.add(image_name)
 
-        return result
+        return remote_deps, local_deps
 
     async def _build_work(
         self,
         tag: str,
         build_op: BuildOperation,
+        local_deps: Set[str],
         image_tag_map: Dict[ImageDefinition, str],
         title: str,
     ) -> None:
@@ -437,6 +461,8 @@ class BuildExecutor:
                 raise AssertionError("Unexpected image type in build operation")
 
         lines.append(f"FROM { self._name_image(img, image_tag_map) }")
+        if syntax := self.tplbld.config.dockerfile_syntax:
+            lines.append(f"# syntax={syntax}")
 
         dockerfile_data = "\n".join(reversed(lines)).encode("utf-8")
         await self.client_build(
@@ -444,7 +470,10 @@ class BuildExecutor:
             build_op.platform,
             dockerfile_data,
             title,
-            build_op.inline_context.context if build_op.inline_context else None,
+            context=build_op.inline_context.context
+            if build_op.inline_context
+            else None,
+            dependencies=local_deps,
         )
 
     def _name_image(
@@ -471,7 +500,9 @@ class BuildExecutor:
         platform: str,
         dockerfile_data: bytes,
         title: str,
+        *,
         context: Optional[BuildContext] = None,
+        dependencies: Optional[Set[str]] = None,
     ) -> None:
         """Wrapper that executes the client command to start a build"""
 
@@ -503,7 +534,11 @@ class BuildExecutor:
                     _create_subprocess(
                         self.client_config.build,
                         self.tplbld.jinja_env,
-                        dict(image=image, platform=platform),
+                        dict(
+                            image=image,
+                            platform=platform,
+                            dependencies=dependencies or set(),
+                        ),
                         output_stream=output_stream,
                         input_data=pipe_reader(),
                     ),

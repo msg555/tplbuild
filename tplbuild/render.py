@@ -91,6 +91,7 @@ def _render_context(
             None if context_config.umask is None else int(context_config.umask, 8),
             ignore_data.split("\n"),
         ),
+        platform=stage_desc.platform,
     )
 
 

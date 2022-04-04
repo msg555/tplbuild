@@ -311,6 +311,11 @@ class TplConfig(pydantic.BaseModel):
     #: given stage_name. Like :attr:`base_image_name` the template is passed
     #: "stage_name", "profile", "and "platform" parameters.
     stage_push_name: str = "{{ stage_name}}"
+    #: The dockerfile "syntax" to use as the build frontend when running against
+    #: builders that understand the "syntax" directive. For some build clients
+    #: specifiying a syntax may be required (e.g. the buildx client requires
+    #: docker/dockerfile:1.4 or later).
+    dockerfile_syntax: pydantic.constr(regex=r"^[^\s]*$") = ""  # type: ignore
     #: List of platforms to build images for. This defaults to linux/amd64
     #:     but should be explicitly configured. Base images will be built
     #:     for each platform listed here allowing for top-level images to

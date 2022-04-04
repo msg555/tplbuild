@@ -2,10 +2,14 @@ version: "1.0"
 
 base_image_name: docker.io/msg555/tplbuild-base
 stage_image_name: '{{ stage_name }}'
-stage_push_name: 'docker.io/msg555/{{ stage_name }}{% if profile != "release" %}-{{ profile }}{% endif %}'
+stage_push_name: |
+  docker.io/msg555/{{ stage_name }}
+  {%- if profile != "release" -%}
+    -{{ profile }}
+  {%- endif %}
 
 dockerfile_syntax: 
-  docker/dockerfile:1
+  docker/dockerfile:1.4
 
 platforms:
   - linux/amd64
