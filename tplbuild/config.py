@@ -242,7 +242,7 @@ class UserConfig(pydantic.BaseModel):
     #: Maximum number of concurrent build jbs. If set to 0 this will be set to
     #: `os.cpu_count()`.
     build_jobs: int = 0
-    #: Maximum number of concurrent push jobs.
+    #: Maximum number of concurrent push or pull jobs.
     push_jobs: int = 4
     #: Maximum number of concurrent tag jobs.
     tag_jobs: int = 8
@@ -260,7 +260,7 @@ class UserConfig(pydantic.BaseModel):
     def build_jobs_valid(cls, v):
         """ensure build_jobs is non-negative"""
         if v == 0:
-            return os.cpu_count()
+            return os.cpu_count() or 4
         if v < 0:
             raise ValueError("build_jobs must be non-negative")
         return v

@@ -1,8 +1,8 @@
-import argparse
 import asyncio
 import logging
 import os
 import sys
+from argparse import SUPPRESS, ArgumentParser
 from typing import Callable, Dict, Mapping
 
 import yaml
@@ -36,56 +36,16 @@ ALL_UTILITIES: Mapping[str, Callable[[], CliUtility]] = {
 }
 
 
-def setup_parser(
-    parser: argparse.ArgumentParser, utilities: Mapping[str, CliUtility]
-) -> None:
+def create_main_parser(utilities: Mapping[str, CliUtility]) -> ArgumentParser:
     """Setup the argument parser configuration for each utility."""
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="count",
-        default=0,
-    )
-    parser.add_argument(
-        "-C",
-        "--base-dir",
-        required=False,
-        default=".",
-        help="Base directory for tplbuild",
-    )
-    parser.add_argument(
-        "--auth-file",
-        required=False,
-        default=None,
-        help="Path to the container auth file",
-    )
-    parser.add_argument(
-        "--insecure",
-        required=False,
-        const=True,
-        action="store_const",
-        default=False,
-        help="Disable server certificate verification",
-    )
-    parser.add_argument(
-        "--cafile",
-        required=False,
-        default=None,
-        help="SSL context CA file",
-    )
-    parser.add_argument(
-        "--capath",
-        required=False,
-        default=None,
-        help="SSL context CA directory",
-    )
-    parser.add_argument(
-        "--load-default-certs",
-        required=False,
-        const=True,
-        action="store_const",
-        default=False,
-        help="Load system default certs always",
+    parents = [
+        create_base_parser(),
+        create_config_parser(),
+    ]
+
+    parser = ArgumentParser(
+        description="templated build tool",
+        parents=parents,
     )
     subparsers = parser.add_subparsers(
         required=True,
@@ -94,7 +54,84 @@ def setup_parser(
     )
 
     for subcommand, utility in utilities.items():
-        utility.setup_parser(subparsers.add_parser(subcommand))
+        utility.setup_parser(subparsers.add_parser(subcommand, parents=parents))
+
+    return parser
+
+
+def create_base_parser() -> ArgumentParser:
+    """
+    Create shared parser for basic CLI options.
+    """
+    parser = ArgumentParser(description="Base tplbuild options", add_help=False)
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="count",
+        default=SUPPRESS,
+    )
+    parser.add_argument(
+        "-C",
+        "--base-dir",
+        required=False,
+        default=SUPPRESS,
+        help="Base directory for tplbuild",
+    )
+    return parser
+
+
+def create_config_parser() -> ArgumentParser:
+    """
+    Create shared parser that overrides user configuration tplbuild options.
+    """
+    parser = ArgumentParser(description="Use config options", add_help=False)
+    parser.add_argument(
+        "--auth-file",
+        required=False,
+        default=SUPPRESS,
+        help="Path to the container auth file",
+    )
+    parser.add_argument(
+        "--insecure",
+        required=False,
+        const=True,
+        action="store_const",
+        default=SUPPRESS,
+        help="Disable server certificate verification",
+    )
+    parser.add_argument(
+        "--cafile",
+        required=False,
+        default=SUPPRESS,
+        help="SSL context CA file",
+    )
+    parser.add_argument(
+        "--capath",
+        required=False,
+        default=SUPPRESS,
+        help="SSL context CA directory",
+    )
+    parser.add_argument(
+        "--load-default-certs",
+        required=False,
+        const=True,
+        action="store_const",
+        default=SUPPRESS,
+        help="Load system default certs always",
+    )
+    parser.add_argument(
+        "--build-jobs",
+        required=False,
+        default=SUPPRESS,
+        help="Set max concurrent build jobs",
+    )
+    parser.add_argument(
+        "--push-jobs",
+        required=False,
+        default=SUPPRESS,
+        help="Set max concurrent push or pull jobs",
+    )
+    return parser
 
 
 def setup_logging(verbose: int) -> None:
@@ -124,7 +161,7 @@ def setup_logging(verbose: int) -> None:
 
 
 def load_user_config(args) -> UserConfig:
-    """Load the user config."""
+    """Load the user config. Override with settings from args as requested."""
     user_config_locations = {
         os.path.join(args.base_dir, ".tplbuildconfig.yml"),
         os.path.expanduser("~/.tplbuildconfig.yml"),
@@ -153,6 +190,16 @@ def load_user_config(args) -> UserConfig:
         user_config.ssl_context.capath = args.capath
     if args.load_default_certs:
         user_config.ssl_context.load_default_certs = True
+    if args.build_jobs is not None:
+        if args.build_jobs <= 0:
+            user_config.build_jobs = os.cpu_count() or 4
+        else:
+            user_config.build_jobs = args.build_jobs
+    if args.push_jobs is not None:
+        if args.build_jobs <= 0:
+            user_config.push_jobs = os.cpu_count() or 4
+        else:
+            user_config.push_jobs = args.push_jobs
     return user_config
 
 
@@ -185,16 +232,35 @@ def create_tplbld(
     )
 
 
+def apply_default_args(args) -> None:
+    """
+    Apply default valeus to CLI arguments as needed. The normal default behavior
+    of argparse does not work well with parsers shared across subparsers.
+    """
+    defaults = dict(
+        verbose=0,
+        base_dir=".",
+        auth_file=None,
+        insecure=False,
+        cafile=None,
+        capath=None,
+        load_default_certs=False,
+        build_jobs=None,
+        push_jobs=None,
+    )
+    for key, val in defaults.items():
+        setattr(args, key, getattr(args, key, val))
+
+
 async def amain() -> int:
     """Parse CLI options, setup logging, then invoke the requested utility"""
     utilities = {
         subcommand: utility_cls() for subcommand, utility_cls in ALL_UTILITIES.items()
     }
 
-    parser = argparse.ArgumentParser(description="templated build tool")
-    setup_parser(parser, utilities)
+    parser = create_main_parser(utilities)
     args = parser.parse_args()
-
+    apply_default_args(args)
     setup_logging(args.verbose)
 
     try:

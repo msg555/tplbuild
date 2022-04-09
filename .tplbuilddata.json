@@ -2,22 +2,22 @@
   "source": {
     "docker.io/library/python": {
       "3.10": {
-        "linux/amd64": "sha256:ff44723f431df0c39229b2a9ed1b8692e1d2d125cc1dc91fa1ac401ec0431ff0",
-        "linux/arm64": "sha256:1b1a53ef7b750ec01f86ff51aa3be963b156163969f298c715df9241dcfc4154"
+        "linux/amd64": "sha256:dff8c1e4c3a609e87c05f1e08399332cf2dfb2b41d9bc91e142eb5c2bee887a0",
+        "linux/arm64": "sha256:a4296db77cf28df79cfc89886d0dd6aeaedb0ad82dddbfdf0e0e81e7e2881bbb"
       },
       "3.9": {
-        "linux/amd64": "sha256:638ec576748ee1b34b3d54ef92808e3799d79283d24f76ccfc6261b8ace4e21e",
-        "linux/arm64": "sha256:ff475cc49adf6782a9f5ecaa66012681e5ebacb64cb44c31161776f718751dd3"
+        "linux/amd64": "sha256:e646129324df601d69f7a84fa51ddc4be80f7ba0c02b08e5b436f242553b0f69",
+        "linux/arm64": "sha256:79b421dbdb1265fe439459e21292c2eed57d21a5b97f742f98a28a0c83a45b2b"
       },
       "3.8": {
-        "linux/arm64": "sha256:a19873d7657a4f31d243b1c4ef3c917a0cdc207424b5020d15876dd0eed82c35",
-        "linux/amd64": "sha256:368ff38ad501bb8504f5935ccfa8f4647d2a1dc05b82e123082d712f54e67a7d"
+        "linux/arm64": "sha256:fe67bbaf05199d092a6abedfab4ae3c1a9b9e6e30df69c8e0c0e981439136635",
+        "linux/amd64": "sha256:cc0101810e1d88248d5e62c3891c63130092076eff15afc0577c73887ce1b0bf"
       }
     },
     "docker.io/library/docker": {
       "dind": {
-        "linux/arm64": "sha256:d74f218351f4e28fb0570e6d0d36c122f464720c6ec7ed72f62a4ac3c73bd3b4",
-        "linux/amd64": "sha256:f298d13e26555aee67cae3fa5a583d46d5b0371af9441d9cac1c32ca3287c536"
+        "linux/arm64": "sha256:393cc1ae14256b31ee19deb698ff5dac5856a1fbf8c888d71925370cecbb3ae9",
+        "linux/amd64": "sha256:dd3584c00ebb822729dd5d2902e3a579ca87b9590637b5175035c1b05ea2fec0"
       }
     }
   },

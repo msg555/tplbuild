@@ -431,6 +431,7 @@ class TplBuild:
             )
 
         # Grab the latest digest for the given source image.
+        LOGGER.info("Looking up source image %s:%s", image.repo, image.tag)
         manifest_ref = parse_image_name(f"{image.repo}:{image.tag}")
         try:
             descriptor = await self.registry_client.ref_lookup(manifest_ref)
