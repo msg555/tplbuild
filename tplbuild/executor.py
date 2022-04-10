@@ -115,7 +115,7 @@ async def _create_subprocess(
     await asyncio.gather(*coros)
 
     if proc.returncode:
-        raise TplBuildException("Client build command failed")
+        raise TplBuildException(f"Client command failed {render_args}")
 
     return b"".join(output_arr)
 
@@ -201,6 +201,8 @@ class BuildExecutor:
         self.sem_build_jobs = asyncio.BoundedSemaphore(user_config.build_jobs)
         self.sem_push_jobs = asyncio.BoundedSemaphore(user_config.push_jobs)
         self.sem_tag_jobs = asyncio.BoundedSemaphore(user_config.tag_jobs)
+        self.build_retry = user_config.build_retry
+        self.push_retry = user_config.push_retry
 
     async def build(
         self,
@@ -510,39 +512,51 @@ class BuildExecutor:
             if context is None:
                 context = BuildContext(None, None, [])
 
-            pipe = SyncToAsyncPipe()
-
-            def sync_write_context():
-                context.write_context(
-                    pipe,
-                    extra_files={"Dockerfile": (0o444, dockerfile_data)},
-                )
-                pipe.close()
-
-            async def pipe_reader():
-                try:
-                    while data := await pipe.read():
-                        yield data
-                finally:
-                    pipe.close()
-
             async with self.tplbld.output_streamer.start_stream(title) as output_stream:
-                await asyncio.gather(
-                    asyncio.get_running_loop().run_in_executor(
-                        None, sync_write_context
-                    ),
-                    _create_subprocess(
-                        self.client_config.build,
-                        self.tplbld.jinja_env,
-                        dict(
-                            image=image,
-                            platform=platform,
-                            dependencies=dependencies or set(),
-                        ),
-                        output_stream=output_stream,
-                        input_data=pipe_reader(),
-                    ),
-                )
+                for attempt in range(self.build_retry + 1):
+
+                    def sync_write_context(pipe: SyncToAsyncPipe):
+                        assert context is not None
+                        context.write_context(
+                            pipe,  # type: ignore
+                            extra_files={"Dockerfile": (0o444, dockerfile_data)},
+                        )
+                        pipe.close()
+
+                    async def pipe_reader(pipe: SyncToAsyncPipe):
+                        try:
+                            while data := await pipe.read():
+                                yield data
+                        finally:
+                            pipe.close()
+
+                    pipe = SyncToAsyncPipe()
+                    try:
+                        await asyncio.gather(
+                            asyncio.get_running_loop().run_in_executor(
+                                None, sync_write_context, pipe
+                            ),
+                            _create_subprocess(
+                                self.client_config.build,
+                                self.tplbld.jinja_env,
+                                dict(
+                                    image=image,
+                                    platform=platform,
+                                    dependencies=dependencies or set(),
+                                ),
+                                output_stream=output_stream,
+                                input_data=pipe_reader(pipe),
+                            ),
+                        )
+                        break
+                    except TplBuildException:
+                        await output_stream.write(
+                            f"Build failed on attempt {attempt + 1}/{self.build_retry + 1}".encode(
+                                "utf-8"
+                            )
+                        )
+                        if attempt == self.build_retry:
+                            raise
 
     async def tag_image(self, source_image: str, target_image: str) -> None:
         """Wrapper that executes the client tag command"""
@@ -567,23 +581,43 @@ class BuildExecutor:
         assert self.client_config.pull is not None
         async with self.sem_push_jobs:
             async with self.tplbld.output_streamer.start_stream(title) as output_stream:
-                await _create_subprocess(
-                    self.client_config.pull,
-                    self.tplbld.jinja_env,
-                    dict(image=image),
-                    output_stream=output_stream,
-                )
+                for attempt in range(self.push_retry + 1):
+                    try:
+                        await _create_subprocess(
+                            self.client_config.pull,
+                            self.tplbld.jinja_env,
+                            dict(image=image),
+                            output_stream=output_stream,
+                        )
+                    except TplBuildException:
+                        await output_stream.write(
+                            f"Pull failed on attempt {attempt + 1}/{self.push_retry + 1}".encode(
+                                "utf-8"
+                            )
+                        )
+                        if attempt == self.push_retry:
+                            raise
 
     async def push_image(self, image: str, title: str) -> None:
         """Wrapper that executes the client push command"""
         async with self.sem_push_jobs:
             async with self.tplbld.output_streamer.start_stream(title) as output_stream:
-                await _create_subprocess(
-                    self.client_config.push,
-                    self.tplbld.jinja_env,
-                    dict(image=image),
-                    output_stream=output_stream,
-                )
+                for attempt in range(self.push_retry + 1):
+                    try:
+                        await _create_subprocess(
+                            self.client_config.push,
+                            self.tplbld.jinja_env,
+                            dict(image=image),
+                            output_stream=output_stream,
+                        )
+                    except TplBuildException:
+                        await output_stream.write(
+                            f"Pull failed on attempt {attempt + 1}/{self.push_retry + 1}".encode(
+                                "utf-8"
+                            )
+                        )
+                        if attempt == self.push_retry:
+                            raise
 
     async def platform(self) -> str:
         """

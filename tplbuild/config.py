@@ -246,6 +246,10 @@ class UserConfig(pydantic.BaseModel):
     push_jobs: int = 4
     #: Maximum number of concurrent tag jobs.
     tag_jobs: int = 8
+    #: Maximum number of times a build will be retried before failing a build.
+    build_retry: int = 0
+    #: Maximum number of times a push or pull will be retried before failing a build.
+    push_retry: int = 0
     #: Configure the SSL context used to contact registries. This only controls
     #: accesses made by tplbuild itself. The client builder will need to be
     #: configured separately.

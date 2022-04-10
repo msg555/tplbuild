@@ -9,6 +9,7 @@ RUN_FLAGS=(
   -w /work
   -u "$(id -u):$(id -g)"
   -e HOME=/home/me
+  --rm
 )
 
 for GID in $(id -G); do
