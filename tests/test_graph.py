@@ -3,9 +3,9 @@ from unittest.mock import Mock, call
 
 import pytest
 
-from .exceptions import TplBuildException
-from .graph import visit_graph
-from .images import CommandImage, CopyCommandImage, ImageDefinition, SourceImage
+from tplbuild.exceptions import TplBuildException
+from tplbuild.graph import visit_graph
+from tplbuild.images import CommandImage, CopyCommandImage, ImageDefinition, SourceImage
 
 
 class ImageTestNode(ImageDefinition):

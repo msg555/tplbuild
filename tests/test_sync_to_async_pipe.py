@@ -4,8 +4,8 @@ import time
 
 import pytest
 
-from .hashing import HASHER
-from .sync_to_async_pipe import SyncToAsyncPipe
+from tplbuild.hashing import HASHER
+from tplbuild.sync_to_async_pipe import SyncToAsyncPipe
 
 
 def asyncio_run(func):

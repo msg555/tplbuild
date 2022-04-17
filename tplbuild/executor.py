@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import sys
 import uuid
 from asyncio.subprocess import DEVNULL, PIPE
 from typing import (
@@ -29,6 +28,7 @@ from .arch import split_platform
 from .config import ClientCommand
 from .context import BuildContext
 from .exceptions import TplBuildException
+from .exit_context import async_exit_context, get_exit_stack
 from .images import (
     BaseImage,
     CommandImage,
@@ -46,6 +46,7 @@ from .tplbuild import TplBuild
 LOGGER = logging.getLogger(__name__)
 
 
+@async_exit_context
 async def _create_subprocess(
     cmd: ClientCommand,
     jinja_env: jinja2.Environment,
@@ -111,8 +112,9 @@ async def _create_subprocess(
     if input_data is not None:
         coros.append(copy_input_data())
 
+    exit_stack = get_exit_stack()
     coros.append(proc.wait())
-    await asyncio.gather(*coros)
+    await asyncio.gather(*(exit_stack.create_scoped_task(coro) for coro in coros))
 
     if proc.returncode:
         raise TplBuildException(f"Client command failed {render_args}")
@@ -204,6 +206,7 @@ class BuildExecutor:
         self.build_retry = user_config.build_retry
         self.push_retry = user_config.push_retry
 
+    @async_exit_context
     async def build(
         self,
         build_ops: List[BuildOperation],
@@ -293,28 +296,17 @@ class BuildExecutor:
             if complete_callback:
                 await complete_callback(build_op, primary_tag)
 
+        stack = get_exit_stack()
         build_tasks.update(
-            (build_op, asyncio.create_task(_build_single(build_op, build_title)))
+            (build_op, stack.create_scoped_task(_build_single(build_op, build_title)))
             for build_op, build_title in zip(build_ops, build_titles)
         )
         try:
             for task in build_tasks.values():
                 await task
         finally:
-            excs = await asyncio.gather(
-                *(self.untag_image(image) for image in transient_images),
-                return_exceptions=True,
-            )
-
-            # If we're not in an exception already, raise any exception that
-            # occurred untagging transient images. Otherwise we're just going to
-            # ignore the exceptions and assume any failures were a direct result
-            # of the previous failure and not worth mentioning.
-            _, cur_exc, _ = sys.exc_info()
-            if cur_exc is None:
-                for exc in excs:
-                    if isinstance(exc, BaseException):
-                        raise exc
+            for image in transient_images:
+                stack.create_scoped_task(self.untag_image(image))
 
     async def _build_multi_platform(
         self,

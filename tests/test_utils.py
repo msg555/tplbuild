@@ -1,6 +1,6 @@
 import pytest
 
-from .utils import line_reader
+from tplbuild.utils import line_reader
 
 
 @pytest.mark.unit

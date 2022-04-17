@@ -8,7 +8,7 @@ from typing import Optional
 
 import pytest
 
-from .context import BuildContext, _create_pattern, _create_pattern_part
+from tplbuild.context import BuildContext, _create_pattern, _create_pattern_part
 
 
 @contextlib.contextmanager

@@ -14,15 +14,15 @@ format-check:
 	$(PYTHON) -m isort --profile=black --check .
 
 pylint:
-	$(PYTHON) -m pylint tplbuild
+	$(PYTHON) -m pylint tplbuild tests
 
 typecheck:
-	$(PYTHON) -m mypy tplbuild
+	$(PYTHON) -m mypy tplbuild tests
 
 lint: format-check pylint typecheck
 
 test:
-	$(PYTHON) -m pytest -sv --cov=tplbuild tplbuild
+	$(PYTHON) -m pytest -sv --cov=tplbuild tests
 
 docs:
 	make -C docs html
