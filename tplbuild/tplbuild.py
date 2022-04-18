@@ -180,10 +180,10 @@ class TplBuild:
         :attr:`TplConfig.stages` to see if there is an explicit configuration
         for this stage.
 
-        Otherwise, if the stage name starts with "base-" or "base_" a base
+        Otherwise, if the stage name starts with "base-" or "base\\_" a base
         image `StageConfig` will be returned.
 
-        If the name starts with "anon-" or "anon_" instead the stage will be
+        If the name starts with 'anon-' or 'anon\\_' instead the stage will be
         considered an "anonymous" stage. This means that it will neither be built
         as a base image nor will it be tagged or pushed to any image name. Such
         images are used for intermediate build operations and are not an output
@@ -411,8 +411,8 @@ class TplBuild:
             force_update: Update the image digest even if it is locally cached
 
         Raises:
-            TplBuildException if the image could not be fetched or if it
-            has no matching platform.
+            TplBuildException: if the image could not be fetched or if it
+                has no matching platform.
         """
         if image.digest is not None:
             return image

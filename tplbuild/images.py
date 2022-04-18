@@ -131,11 +131,9 @@ class MultiPlatformImage(StageDefinedImage):
     """
     Container image node that merges multiple other images into a single
     manifest list.
-
-    Attributes:
-        images: Mapping of platform names to images.
     """
 
+    #: Mapping of platform names to images.
     images: Dict[str, ImageDefinition]
 
     def get_dependencies(self) -> List[ImageDefinition]:
@@ -155,22 +153,22 @@ class BaseImage(ImageDefinition):
     Image node representing a base image.
 
     Attributes:
-        profile: Name of the profile this base image belongs to
-        stage: Name of the build stage
-        platform: The platform to select for this base image.
-        image: The build graph behind this base image. This can be None if
-            the base image will not be dereferenced.
-        content_hash: The conent hash of the base image. Typically this is
-            supplied from tplbuild's cached build data and is used to find
-            the base image from an external repository.
-        digest: The digest of the image as stored in the registry.
     """
 
+    #: Name of the profile this base image belongs to
     profile: str
+    #: Name of the build stage
     stage: str
+    #: The platform to select for this base image
     platform: str
+    #: The build graph behind this base image. This can be None if the base image will
+    #: not be dereferenced.
     image: Optional[ImageDefinition] = None
+    #: The conent hash of the base image. Typically this is supplied from tplbuild's
+    #: cached build data and is used to find the base image from an external repository.
     content_hash: Optional[str] = None
+    #: The digest of the image as stored in the registry. Like :attr:`content_hash` this
+    #: also typically comes from the cached build data.
     digest: Optional[str] = None
 
     def get_dependencies(self) -> List[ImageDefinition]:

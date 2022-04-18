@@ -10,3 +10,4 @@ dist
 *.pypi-token.gpg
 .venv
 .tplbuildconfig.yml
+.coverage
