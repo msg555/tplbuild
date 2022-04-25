@@ -129,6 +129,7 @@ def _render_context(
             ignore_data,
             dict(
                 platform=stage_desc.platform,
+                user_config=tplbld.user_config,
                 **profile_data,
             ),
             file_env=True,
@@ -139,13 +140,22 @@ def _render_context(
         )
         raise
 
+    ignore_lines = ignore_data.split("\n")
+    if context_config.base_dir == ".":
+        ignore_lines.append("Dockerfile")
+        ignore_lines.append(context_config.ignore_file or ".dockerignore")
+        ignore_lines.append("tplbuild.yml")
+        ignore_lines.append(".tplbuilddata.json")
+
+    build_context = BuildContext(
+        os.path.join(tplbld.base_dir, context_config.base_dir),
+        None if context_config.umask is None else int(context_config.umask, 8),
+        ignore_lines,
+    )
+
     return ContextImage(
         stage_descs={stage_desc},
-        context=BuildContext(
-            os.path.join(tplbld.base_dir, context_config.base_dir),
-            None if context_config.umask is None else int(context_config.umask, 8),
-            ignore_data.split("\n"),
-        ),
+        context=build_context,
         platform=stage_desc.platform,
     )
 
@@ -235,6 +245,7 @@ def render(
             "Dockerfile",
             dict(
                 platform=platform,
+                user_config=tplbld.user_config,
                 **profile_data,
             ),
             file_template=True,

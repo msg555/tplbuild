@@ -22,7 +22,10 @@ typecheck:
 lint: format-check pylint typecheck
 
 test:
-	$(PYTHON) -m pytest -sv --cov=tplbuild tests
+	$(PYTHON) -m pytest -sv --cov=tplbuild -m unit tests
+
+build-test:
+	./tests/run_build_test.sh
 
 docs:
 	make -C docs html

@@ -691,6 +691,8 @@ class TplBuild:
         images = visit_graph((stage.image for stage in stages), _replace_source_image)
         for stage, image in zip(stages, images):
             stage.image = image
+            if stage.base_image is not None:
+                stage.base_image.image = image
 
     def save_build_data(self):
         """
