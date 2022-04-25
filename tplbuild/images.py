@@ -127,6 +127,19 @@ class SourceImage(ImageDefinition):
 
 
 @dataclass(eq=False)
+class ScratchImage(ImageDefinition):
+    """Represents an empty scratch image"""
+
+    #: The platform of the scratch image. Many build systems separate image data by
+    #: platform so even though scratch images do not necessarily have platform-specific
+    #: data we need to handle them each like they are different.
+    platform: str
+
+    def local_hash_data(self, symbolic: bool) -> Any:
+        return self.platform
+
+
+@dataclass(eq=False)
 class MultiPlatformImage(StageDefinedImage):
     """
     Container image node that merges multiple other images into a single

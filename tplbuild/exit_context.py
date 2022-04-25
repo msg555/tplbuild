@@ -45,10 +45,11 @@ class ScopedTaskExitStack(contextlib.AsyncExitStack):
                 if propagate_cancel and exc_typ is None:
                     raise
                 LOGGER.debug("Supressing cancellation error for async task")
-            except BaseException:  # pylint: disable=broad-except
+            except BaseException as exc:  # pylint: disable=broad-except
                 if propagate_exception and exc_typ is None:
                     raise
-                LOGGER.exception("Unhandled exception in scoped async task dropped")
+                if exc is not exc_val:
+                    LOGGER.exception("Unhandled exception in scoped async task dropped")
 
         self.push_async_exit(cancel_task)
         return task

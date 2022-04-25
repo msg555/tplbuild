@@ -36,6 +36,7 @@ from .images import (
     CopyCommandImage,
     ImageDefinition,
     MultiPlatformImage,
+    ScratchImage,
     SourceImage,
 )
 from .output import OutputStream
@@ -486,6 +487,8 @@ class BuildExecutor:
             return f"{image.repo}@{image.digest}"
         if isinstance(image, BaseImage):
             return self.tplbld.get_base_image_name(image, use_digest=True)
+        if isinstance(image, ScratchImage):
+            return "scratch"
         raise AssertionError("unexpected image type")
 
     async def client_build(
