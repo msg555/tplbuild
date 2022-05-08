@@ -1,6 +1,6 @@
 import dataclasses
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from aioregistry import parse_image_name
 
@@ -20,63 +20,9 @@ from .images import (
     StageDescriptor,
 )
 from .tplbuild import TplBuild
-from .utils import line_reader
+from .utils import extract_command_flags, format_command_with_flags, line_reader
 
 RESERVED_STAGE_NAMES = {"scratch"}
-
-
-def _extract_command_flags(line: str) -> Tuple[str, Dict[str, str]]:
-    """
-    Some Dockerfile commands support flags in the form "--name=value" at the start of
-    the command. This extracts the commands with those flags removed and returns a
-    mapping of the extracted flags.
-
-    Notes:
-        As far as I know there is no escaping layer here. Names that contain spaces
-        or equal signs cannot be represented as flag names or values.
-
-    Returns: (line, flags) tuple
-        line: The line with the flags removed.
-        flags: The mapping of flag names to flag values that was extracted
-    """
-
-    def _skip_ws(pos: int) -> int:
-        while pos < len(line) and line[pos].isspace():
-            pos += 1
-        return pos
-
-    pos = _skip_ws(0)
-    flags = {}
-    while pos + 1 < len(line) and line[pos : pos + 2] == "--":
-        space = line.find(" ", pos + 2)
-        if space == -1:
-            space = len(line)
-
-        parts = line[pos + 2 : space].split("=", 1)
-        if len(parts) == 2:
-            flags[parts[0]] = parts[1]
-        else:
-            flags[parts[0]] = ""
-        pos = _skip_ws(space)
-
-    if not flags:
-        return line, {}
-    return line[pos:], flags
-
-
-def _format_command_with_flags(line: str, flags: Dict[str, str]) -> str:
-    """
-    The inverse of _extract_command_flags
-
-    Returns:
-        The command line with the flags added into the front of the command.
-    """
-    if not flags:
-        return line
-    flags_str = " ".join(f"--{key}={val}" for key, val in flags.items())
-    if not line:
-        return flags_str
-    return f"{flags_str} {line}"
 
 
 @dataclasses.dataclass(eq=False)
@@ -334,11 +280,11 @@ def render(
 
             ctx = image_stack[-1].contexts[-1]
 
-            line, flags = _extract_command_flags(line)
+            line, flags = extract_command_flags(line)
             if from_name := flags.pop("from", None):
                 ctx = _LateImageReference(from_name)
 
-            line = _format_command_with_flags(line, flags)
+            line = format_command_with_flags(line, flags)
             if ctx is None:
                 raise TplBuildException(f"{line_num}: Cannot COPY from null context")
 

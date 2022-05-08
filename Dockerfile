@@ -8,9 +8,13 @@ COPY --from=docker.io/library/docker:dind /usr/local/bin/docker /bin/
 
 WORKDIR /tplbuild
 
-COPY --from=base . ./
-
-RUN pip install -r requirements.txt {% if env == "dev" -%}-r requirements-dev.txt{%- endif %}
+{% if env == "dev" -%}
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install -r requirements.txt -r requirements-dev.txt
+{% else -%}
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
+{% endif %}
 
 
 FROM base-tplbuild AS tplbuild

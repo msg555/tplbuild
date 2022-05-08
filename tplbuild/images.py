@@ -4,6 +4,8 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 
 from .config import StageConfig
 from .context import BuildContext
+from .exceptions import TplBuildException
+from .utils import extract_command_flags, split_line_tokens
 
 
 class ImageDefinition(metaclass=abc.ABCMeta):
@@ -97,8 +99,22 @@ class CopyCommandImage(StageDefinedImage):
     context: ImageDefinition
     command: str
 
-    def local_hash_data(self, symbolic: bool) -> str:
-        return self.command
+    def local_hash_data(self, symbolic: bool):
+        if symbolic or not isinstance(self.context, ContextImage):
+            return self.command
+
+        line, _ = extract_command_flags(self.command)
+        try:
+            tokens = split_line_tokens(line)
+        except ValueError as exc:
+            raise TplBuildException("Failed to prase copy command") from exc
+
+        return [
+            self.command,
+            self.context.context.compute_partial_hash(  # pylint: disable=no-member
+                patterns=tokens[:-1]
+            ),
+        ]
 
     def get_dependencies(self) -> List[ImageDefinition]:
         return [self.parent, self.context]
@@ -209,10 +225,13 @@ class ContextImage(StageDefinedImage):
     platform: str
 
     def local_hash_data(self, symbolic: bool) -> Any:
-        return [
-            self.platform,
-            self.context.symbolic_hash if symbolic else self.context.full_hash,
-        ]
+        """
+        For non-symbolic hash calculations it's actually the CopyImage nodes
+        that calculate the hash based on file data in the context.
+        """
+        if symbolic:
+            return [self.platform, self.context.symbolic_hash]
+        return self.platform
 
 
 @dataclass(eq=False)

@@ -35,9 +35,4 @@ contexts:
     ignore: | # Set 
       *
       !tplbuild
-
-  base:
-    ignore: |
-      *
-      !requirements.txt
-      {% if env == "dev" %}!requirements-dev.txt{% endif %}
+      !requirements*

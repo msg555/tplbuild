@@ -1,6 +1,6 @@
 import pytest
 
-from tplbuild.utils import line_reader
+from tplbuild.utils import extract_command_flags, format_command_with_flags, line_reader
 
 
 @pytest.mark.unit
@@ -26,3 +26,45 @@ def test_line_reader():
     assert list(line_reader("hi \\\n # comment\nthere")) == [(2, "hi there")]
     assert list(line_reader("hi \\\n # comment \\\nthere")) == [(2, "hi there")]
     assert not list(line_reader("\n\n\n"))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "line,exp_new_line,exp_flags,exp_format_line",
+    [
+        pytest.param(" hello ", " hello ", {}, " hello ", id="noflags"),
+        pytest.param(
+            "--doh=reh hello", "hello", {"doh": "reh"}, "--doh=reh hello", id="oneflag"
+        ),
+        pytest.param(
+            "\t \v--foo=bar --bar=baz \t hello there! ",
+            "hello there! ",
+            {"foo": "bar", "bar": "baz"},
+            "--foo=bar --bar=baz hello there! ",
+            id="twoflags",
+        ),
+        pytest.param(
+            "--bar=baz    --foo=bar   hello",
+            "hello",
+            {"foo": "bar", "bar": "baz"},
+            "--bar=baz --foo=bar hello",
+            id="twoflagsrev",
+        ),
+        pytest.param(
+            "  --foo=bar --foo=baz hello",
+            "hello",
+            {"foo": "baz"},
+            "--foo=baz hello",
+            id="dupflag",
+        ),
+        pytest.param(
+            " --only=flag ", "", {"only": "flag"}, "--only=flag", id="onlyflag"
+        ),
+    ],
+)
+def test_command_flags(line, exp_new_line, exp_flags, exp_format_line):
+    """Test flag extraction and formatting behavior"""
+    new_line, flags = extract_command_flags(line)
+    assert exp_new_line == new_line
+    assert exp_flags == flags
+    assert format_command_with_flags(new_line, flags) == exp_format_line
