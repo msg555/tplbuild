@@ -57,8 +57,6 @@ def _create_pattern_part(
         elif ch in "*?":
             simple = False
             result.append(f"[^{os.path.sep}]{ch}")
-        elif ch == "]":
-            raise ValueError("Unmatched ']' should be escaped")
         elif ch == "[":
             simple = False
             range_start = None
@@ -96,8 +94,6 @@ def _create_pattern_part(
                     result.append("-")
                     char_avail = False
                     continue
-                elif ch == "[":
-                    raise ValueError("'[' in character class should be escaped")
 
                 if range_start is not None:
                     if ord(range_start) > ord(ch):

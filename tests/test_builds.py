@@ -47,15 +47,13 @@ async def test_smartcopy():
         assert result == 0
 
         # Change file not used by base image, ensure check passes
-        if False:  # pylint: disable=using-constant-test
-            # TODO: Need to add support for smart context detection
-            with open(os.path.join(base_dir, "someotherfile.txt"), "wb") as fdata:
-                fdata.write(b"something something\n")
-            result = await BaseBuildUtility().main(
-                Namespace(**params, check=True),
-                tplbld,
-            )
-            assert result == 0
+        with open(os.path.join(base_dir, "someotherfile.txt"), "wb") as fdata:
+            fdata.write(b"something something\n")
+        result = await BaseBuildUtility().main(
+            Namespace(**params, check=True),
+            tplbld,
+        )
+        assert result == 0
 
         # Change file used by base image, ensure check fails
         with open(os.path.join(base_dir, "abc"), "wb") as fdata:

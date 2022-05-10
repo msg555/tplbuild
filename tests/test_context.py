@@ -68,6 +68,7 @@ def test_create_pattern_part():
         r"[\^\]]": (r"/[\^\]]", False),
         "_[ab-yz]?.*": (f"/_[ab-yz]{no_sep}?\\.{no_sep}*", False),
         ".{ }^|": (r"/\.\{\ \}\^\|", True),
+        "a[[]b]c": (r"/a[\[]b\]c", False),
     }
     value_error_tests = {
         "[hi": "Unclosed character class",
@@ -80,8 +81,6 @@ def test_create_pattern_part():
         "[]": "Empty character class",
         "[^]": "Empty character class",
         "[a-]": "Unclosed character range",
-        "[a[b]": "'[' in character class should be escaped",
-        "hi]there": "Unmatched ']' should be escaped",
     }
 
     for path_pat, (expected_pat, expected_simple) in pass_tests.items():
@@ -116,6 +115,10 @@ def test_create_pattern():
         ("a/*/b", True): dict(
             yes=["/a/c/b", "/a/c/b/e"],
             no=["/a", "/b", "/a/c", "/a/b", "/a/c/d/b"],
+        ),
+        ("arr[[]0].txt", False): dict(
+            yes=["/arr[0].txt"],
+            no=["/arr[[]0].txt", "/arr0.txt", "/arr[.txt", "/arr].txt", "/arr0].txt"],
         ),
     }
 
