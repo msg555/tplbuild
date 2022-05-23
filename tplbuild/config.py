@@ -16,6 +16,11 @@ RESERVED_PROFILE_KEYS = {
 }
 
 
+def _normalize_rel_path(path: str) -> str:
+    """Normalize and coerce a path into a relative path."""
+    return f".{os.path.sep}{os.path.normpath(os.path.join(os.path.sep, path))[1:]}"
+
+
 class TplContextConfig(pydantic.BaseModel):
     """
     Config model representing a build context.
@@ -47,7 +52,7 @@ class TplContextConfig(pydantic.BaseModel):
     @pydantic.validator("base_dir")
     def normalize_base_dir(cls, v):
         """Normalize the base directory"""
-        return f".{os.path.sep}{os.path.normpath(os.path.join(os.path.sep, v))[1:]}"
+        return _normalize_rel_path(v)
 
 
 class ClientCommand(pydantic.BaseModel):
@@ -343,6 +348,12 @@ class TplConfig(pydantic.BaseModel):
     #: :meth:`Tplbuild.default_stage_config` for information about default stage
     #: configuration.
     stages: Dict[str, StageConfig] = {}
+    #: Search directories for included tempates. Paths must be relative to the
+    #: project base directory.
+    template_paths: List[str] = ["."]
+    #: Template entrypoint to render to generate all build stages. Path should
+    #: be relative to one of the `template_paths`.
+    template_entrypoint: str = "Dockerfile"
 
     @pydantic.validator("platforms")
     def platform_nonempty(cls, v):
@@ -382,6 +393,16 @@ class TplConfig(pydantic.BaseModel):
         if v and v not in values["profiles"]:
             raise ValueError("default_profile must be a valid profile name")
         return v
+
+    @pydantic.validator("template_paths")
+    def normalize_template_paths(cls, v):
+        """Normalize the template search paths"""
+        return [_normalize_rel_path(path) for path in v]
+
+    @pydantic.validator("template_entrypoint")
+    def normalize_template_entrypoint(cls, v):
+        """Normalize the template entrypoint path"""
+        return v  # _normalize_rel_path(v)
 
 
 class BaseImageBuildData(pydantic.BaseModel):

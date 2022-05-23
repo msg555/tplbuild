@@ -1,0 +1,4 @@
+version: "1.0"
+dockerfile_syntax: docker/dockerfile:1.4
+template_paths: [tp1, tp2]
+template_entrypoint: entry

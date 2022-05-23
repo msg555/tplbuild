@@ -81,3 +81,15 @@ async def test_smartcopy():
             tplbld,
         )
         assert result == 0
+
+
+@pytest.mark.build
+async def test_multifile():
+    """Test that the multifile build works as expected."""
+    params = dict(image=[], profile=[], platform=[])
+    async with setup_build_test("multifile") as (_, tplbld):
+        result = await BuildUtility().main(
+            Namespace(**params),
+            tplbld,
+        )
+        assert result == 0

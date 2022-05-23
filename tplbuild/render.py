@@ -20,7 +20,12 @@ from .images import (
     StageDescriptor,
 )
 from .tplbuild import TplBuild
-from .utils import extract_command_flags, format_command_with_flags, line_reader
+from .utils import (
+    extract_command_flags,
+    format_command_with_flags,
+    ignore_escape,
+    line_reader,
+)
 
 RESERVED_STAGE_NAMES = {"scratch"}
 
@@ -87,11 +92,19 @@ def _render_context(
         raise
 
     ignore_lines = ignore_data.split("\n")
-    if context_config.base_dir == ".":
-        ignore_lines.append("Dockerfile")
-        ignore_lines.append(context_config.ignore_file or ".dockerignore")
-        ignore_lines.append("tplbuild.yml")
-        ignore_lines.append(".tplbuilddata.json")
+    ignore_lines.extend(
+        ignore_escape(os.path.join(context_config.base_dir, path))
+        for path in (
+            *(
+                os.path.join(search_path, tplbld.config.template_entrypoint)
+                for search_path in tplbld.config.template_paths
+            ),
+            context_config.ignore_file or ".dockerignore",
+            "tplbuild.yml",
+            ".tplbuilddata.json",
+            ".tplbuildconfig.yml",
+        )
+    )
 
     build_context = BuildContext(
         os.path.join(tplbld.base_dir, context_config.base_dir),
@@ -188,7 +201,7 @@ def render(
 
     try:
         dockerfile_data = tplbld.jinja_render(
-            "Dockerfile",
+            tplbld.config.template_entrypoint,
             dict(
                 platform=platform,
                 user_config=tplbld.user_config,
@@ -198,7 +211,7 @@ def render(
             file_env=True,
         )
     except TplBuildTemplateException as exc:
-        exc.update_message(f"Failed to render build file: {type(exc)}")
+        exc.update_message(f"Failed to render build file: {exc}")
         raise
 
     @dataclasses.dataclass

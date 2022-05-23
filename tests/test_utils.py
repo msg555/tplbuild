@@ -1,6 +1,11 @@
 import pytest
 
-from tplbuild.utils import extract_command_flags, format_command_with_flags, line_reader
+from tplbuild.utils import (
+    extract_command_flags,
+    format_command_with_flags,
+    ignore_escape,
+    line_reader,
+)
 
 
 @pytest.mark.unit
@@ -68,3 +73,17 @@ def test_command_flags(line, exp_new_line, exp_flags, exp_format_line):
     assert exp_new_line == new_line
     assert exp_flags == flags
     assert format_command_with_flags(new_line, flags) == exp_format_line
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        pytest.param(r"hi\there", r"hi\\there"),
+        pytest.param(r"./oh?", r"./oh\?"),
+        pytest.param(r"./[].?\*/**", r"./\[\].\?\\\*/\*\*"),
+    ],
+)
+def test_ignore_escape(a, b):
+    """Test ignore_escape behavior"""
+    assert ignore_escape(a) == b

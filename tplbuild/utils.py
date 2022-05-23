@@ -136,3 +136,11 @@ def format_command_with_flags(line: str, flags: Dict[str, str]) -> str:
     if not line:
         return flags_str
     return f"{flags_str} {line}"
+
+
+def ignore_escape(path: str) -> str:
+    """
+    Escape a path appropriately for a docker ignore file.
+    """
+    special_chars = "\\*?[]"
+    return "".join("\\" + ch if ch in special_chars else ch for ch in path)

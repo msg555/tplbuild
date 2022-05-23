@@ -8,9 +8,6 @@ docker:
   tag:
     template: |
       {{ args.extend(["docker", "tag", source_image, target_image]) }}
-  pull:
-    template: |
-      {{ args.extend(["docker", "pull", image]) }}
   push:
     template: |
       {{ args.extend(["docker", "push", image]) }}
@@ -55,9 +52,6 @@ buildx:
   tag:
     template: |
       {{ args.extend(["docker", "tag", source_image, target_image]) }}
-  pull:
-    template: |
-      {{ args.extend(["docker", "pull", image]) }}
   push:
     template: |
       {{ args.extend(["docker", "push", image]) }}

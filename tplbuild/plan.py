@@ -9,6 +9,7 @@ from .images import (
     CopyCommandImage,
     ImageDefinition,
     MultiPlatformImage,
+    ScratchImage,
     SourceImage,
     StageData,
 )
@@ -173,7 +174,9 @@ class BuildPlanner:
 
         removed_build_ops = set()
         for image, build_op in build_ops.items():
-            if not build_op.stages and isinstance(image, (BaseImage, SourceImage)):
+            if not build_op.stages and isinstance(
+                image, (BaseImage, SourceImage, ScratchImage)
+            ):
                 # base/source images that do not correspond to a stage do not
                 # represent any work so we skip them.
                 removed_build_ops.add(build_op)

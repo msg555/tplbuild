@@ -1,0 +1,3 @@
+FROM scratch as test2
+
+{% include "copy2" %}

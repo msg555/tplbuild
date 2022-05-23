@@ -4,6 +4,7 @@ import functools
 import json
 import logging
 import os
+import shlex
 from typing import Any, Dict, List, Optional, Tuple
 
 import jinja2
@@ -29,7 +30,7 @@ from .graph import hash_graph, visit_graph
 from .images import BaseImage, ImageDefinition, SourceImage, StageData
 from .output import OutputStreamer
 from .plan import BuildOperation, BuildPlanner
-from .utils import open_and_swap
+from .utils import ignore_escape, open_and_swap
 
 LOGGER = logging.getLogger(__name__)
 
@@ -94,8 +95,14 @@ class TplBuild:
         self.executor = BuildExecutor(self)
         self.jinja_env = jinja2.Environment()
         self.jinja_file_env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(base_dir)
+            loader=jinja2.FileSystemLoader(
+                [os.path.join(base_dir, path) for path in config.template_paths]
+            )
         )
+        self.jinja_env.filters["shell_escape"] = shlex.quote
+        self.jinja_env.filters["ignore_escape"] = ignore_escape
+        self.jinja_file_env.filters["shell_escape"] = shlex.quote
+        self.jinja_file_env.filters["ignore_escape"] = ignore_escape
         self.output_streamer = OutputStreamer()
         try:
             with open(
@@ -139,7 +146,7 @@ class TplBuild:
         except jinja2.TemplateError as exc:
             if file_template:
                 raise TplBuildTemplateException(
-                    f"Failed to render file template {repr(file_template)}"
+                    f"Failed to render file template {repr(template)}"
                 ) from exc
             raise TplBuildTemplateException("Failed to render template") from exc
 
