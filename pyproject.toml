@@ -15,7 +15,6 @@ markers = [
 [tool.pylint.'MESSAGE CONTROL']
 enable = [
     "use-symbolic-message-instead",
-    "useless-supression",
 ]
 
 disable = [
@@ -36,7 +35,6 @@ disable = [
     "format",
     "missing-module-docstring",
     "fixme",
-    "no-self-use",
 ]
 
 [tool.pylint.MASTER]

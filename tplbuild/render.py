@@ -190,11 +190,13 @@ def render(
     """
     Renders all build contexts and stages into its graph representation.
     """
-    make_stage_desc = lambda name: StageDescriptor(
-        name=name,
-        profile=profile,
-        platform=platform,
-    )
+
+    def make_stage_desc(name: str) -> StageDescriptor:
+        return StageDescriptor(
+            name=name,
+            profile=profile,
+            platform=platform,
+        )
 
     result = {
         context_name: StageData(
