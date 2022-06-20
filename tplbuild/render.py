@@ -1,4 +1,5 @@
 import dataclasses
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
@@ -27,7 +28,26 @@ from .utils import (
     line_reader,
 )
 
+LOGGER = logging.getLogger(__name__)
+
 RESERVED_STAGE_NAMES = {"scratch"}
+SIMPLE_COMMANDS = {
+    "RUN",
+    "CMD",
+    "LABEL",
+    "MAINTAINER",
+    "EXPOSE",
+    "ENV",
+    "ENTRYPOINT",
+    "VOLUME",
+    "USER",
+    "WORKDIR",
+    "ARG",
+    "ONBUILD",
+    "STOPSIGNAL",
+    "HEALTHCHECK",
+    "SHELL",
+}
 
 
 @dataclasses.dataclass(eq=False)
@@ -278,7 +298,7 @@ def render(
                     f"{line_num}: Unexpected extra data after END command"
                 )
             _pop_image_stack()
-        elif cmd in ("RUN", "ENTRYPOINT", "COMMAND", "WORKDIR", "ENV", "USER"):
+        elif cmd in SIMPLE_COMMANDS:
             if not image_stack:
                 raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
             image_stack[-1].image = CommandImage(
@@ -287,7 +307,9 @@ def render(
                 command=cmd,
                 args=line,
             )
-        elif cmd == "COPY":
+        elif cmd in ("ADD", "COPY"):
+            if cmd == "ADD":
+                LOGGER.warning("Treating unsupported 'ADD' command like 'COPY'")
             if not image_stack:
                 raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
 
