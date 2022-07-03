@@ -9,6 +9,7 @@ import yaml
 from aioregistry import (
     AsyncRegistryClient,
     ChainedCredentialStore,
+    CredentialStore,
     DockerCredentialStore,
     default_credential_store,
 )
@@ -207,7 +208,7 @@ def load_user_config(args) -> UserConfig:
 
 def create_registry_client(user_config: UserConfig) -> AsyncRegistryClient:
     """Create an AsyncRegistryClient context from the passed arguments."""
-    creds = default_credential_store()
+    creds: CredentialStore = default_credential_store()
     if user_config.auth_file:
         try:
             creds = ChainedCredentialStore(

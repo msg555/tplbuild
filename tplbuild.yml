@@ -1,6 +1,6 @@
 version: "1.0"
 
-base_image_name: docker.io/msg555/tplbuild-base
+base_image_repo: docker.io/msg555/tplbuild-base
 stage_image_name: '{{ stage_name }}'
 stage_push_name: |
   docker.io/msg555/{{ stage_name }}

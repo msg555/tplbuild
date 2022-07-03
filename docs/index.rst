@@ -11,14 +11,14 @@ the creation of `tplbuild` were
 - Enabling fast and reproducible builds among developers
 
 `tplbuild` can be configured against any image builder supporting the Dockerfile
-syntax but it's recommended to pick a builder among the list of
+syntax but it's recommended to use a builder among the list of officially
 :ref:`supported builders <Builders>`.
 
-The current release is version 0.0.1. This is an early beta release 
-Release 0.0.1 :ref:`installation:Installation`
+The current release is version 0.0.1. See :ref:`installation:Installation` for
+information on installing `tplbuild`.
 
 When should tplbuild be used?
-=============================
+-----------------------------
 
 There are many reasons `tplbuild` might be the right tool for you. These
 include:
@@ -26,23 +26,24 @@ include:
 - You have multiple images that share build logic
 - You have multiple build profiles (e.g. dev/prod)
 - There are multiple devs or machines building your images.
-- You need image environment to be identical across builds and builders
+- You need the image environment to be reproducible across builds and builders
 - You use CI steps that want to run in your container environment (e.g. lint)
 - You need to enforce change management controls
 - You want to publish multi-architecture images
-- Part of your build process must be air-gapped
+- You need a process to manage `CVEs
+  <https://en.wikipedia.org/wiki/Common_Vulnerabilities_and_Exposures>`_ in your images
 
 `tplbuild` may not be the right tool for you if
 
 - You are working alone
-- Repetable builds are not important
+- Reproducible builds are not important
 - You do not use Dockerfiles to build your container images
-- You want to use a builder other than the :ref:`supported builders`.
+- You want to use a builder other than the officially :ref:`supported builders`.
 - You rely on other tools to build your images already that cannot be configured
   to use `tplbuild` (e.g. docker-compose build).
 
 An example
-==========
+----------
 
 To better understand how `tplbuild` works let's look at a simple node
 application and convert it into something managed by `tplbuild`. A
@@ -59,31 +60,30 @@ reasonable starting point for a Dockerfile might look like below:
   COPY package.json ./
   RUN npm install
 
-
   # Install application code
   COPY . .
   CMD ["node", "my-app.js"]
 
 
 Source image locking
---------------------
+____________________
 
-Consider the very first instruction "FROM node:18" that instructs the builder
+The very first instruction :code:`FROM node:18` instructs the builder
 what image to begin with. `tplbuild` refers to these externally provided images
 as "source" images. These *source images* will either be downloaded by the
 builder or a cached version of the image will be used.
 
 But what exactly is in the image "node:18"? It refers to version 18 of the
 "node" image repository. However, it does not fully specify the contents. In
-fact repository maintainers will frequently retag images to pull in
+fact, repository maintainers will frequently re-tag images to pull in
 minor/patch version changes or security updates (and this is good). However,
 for the same reasons we use `lock files
 <https://nodejs.dev/learn/the-package-lock-json-file>`_ at the application
 package level, `tplbuild` "locks" the image digest for each *source image* so
-the build will not unexpectedly change.
+the build will not *unexpectedly* change.
 
-Without changing our Dockerfile we can get this source image locking by using
-`tplbuild` as our builder. Running :code:`tplbuild build` will build our image and
+Without changing our Dockerfile we can get source image locking by using
+`tplbuild`. Running :code:`tplbuild build` will build our image and
 create a new file named .tplbuilddata.json. This file functions as `tplbuild's`
 lock file. Within it you can see the image digest that we locked "node:18" to.
 Future builds will reference this stored value and use the same digest even if
@@ -92,7 +92,9 @@ update your source images to the latest digests to pull in security updates when
 needed.
 
 Base images
------------
+___________
+
+Let's look at the next three lines of our Dockerfile:
 
 .. code-block:: Dockerfile
 
@@ -100,17 +102,16 @@ Base images
   COPY package.json ./
   RUN npm install --production
 
-The next three lines of our Dockerfile are responsible for installing
-our application's dependencies. This step can take awhile and since we are not
-using a lock file could produce inconsistent results.
+These are responsible for installing
+our application's dependencies. This step could take awhile and
+without the use of a node package lock could produce inconsistent results.
 To fix this we can update our Dockerfile into two different
 `build stages
-<https://docs.docker.com/develop/develop-images/multistage-build/>`_.
-The first stage is called the "base" image and will contain all of our
+<https://docs.docker.com/develop/develop-images/multistage-build/>`_:
+The first stage we will call our "base" image and will contain all of our
 applicataion's dependencies without our actual application code. The second
-stage is called the "published" image and will be based on the *base image*,
-copying in the actual application code. Our updated
-Dockerfile might look like below:
+stage we'll call the "published" image and will be built on top of the *base
+image*.  Our updated Dockerfile might look like below:
 
 .. code-block:: Dockerfile
 
@@ -131,12 +132,17 @@ Dockerfile might look like below:
 builds all *published images* while the second builds and stores to a configurable
 registry all *base images*. To get this to work with `tplbuild` we first need to
 tell it what repository to store its cached *base images* in. To do so you need
-to edit `tplbuild.yml` and add a key `base_image_name` that points to the
-desired registry. For instance your tplbuild.yml might look like below:
+to edit `tplbuild.yml` and add a key `base_image_repo` that points to the
+desired location. For instance your tplbuild.yml might look like below:
 
 .. code-block:: yaml
+  :caption: tplbuild.yml
 
-  base_image_name: msg555/base-my-app
+  base_image_name: myregistry.com/base-my-app
+
+By caching *base images* into this shared image registry we only need to build
+the *base image* once and allow any number of developers to share that work by
+accessing this cached image.
 
 Now you can build your base image using the command :code:`tplbuild base-build`. After
 that has completed you can again look at `.tplbuilddata.json` and see the cached
@@ -151,9 +157,9 @@ Once you have rebuilt the base image you can build the published image using the
 same command as before, :code:`tplbuild build`.
 
 Profiles
---------
+________
 
-Now suppose we wanted to support "dev" and "release" build of our image. After
+Now suppose we wanted to support a "dev" and "release" build of our image. After
 all, we don't want our devlopment packages installed in our release image.
 Luckily `tplbuild` transforms our Dockerfile into a Jinja template. We can
 update our :code:`npm install` command to look like this instead:
@@ -163,10 +169,12 @@ update our :code:`npm install` command to look like this instead:
   RUN npm install{% if production %} --production{% endif %}
 
 
-To define this `production` flag we use "profiles". A profile just defines
-key/value data to configure a build. We can add to our tplbuild.yml the contents
+To define this `production` flag we use "profiles". A profile is just a mapping
+of key/value data that is passed to the Jinja template. We can add *default_profile* and
+*profiles* configurations to our tplbuild.yml file to define this new flag.
 
 .. code-block:: yaml
+  :caption: tplbuild.yml
 
   default_profile: dev
   profiles:
@@ -214,13 +222,16 @@ locked source files and prebuilt base images.
 
 
 Multi-Architecture
-------------------
+__________________
 
-Now suppose we want to support the arm64 architecture. This is as easy as adding
-the below section to your `tplbuild.yml` file (substituting your desired
-platforms).
+By default `tplbuild` uses the architecture that is native to the builder. If we
+later want to build against multiple architectures and publish multi
+architecture images `tplbuild` can help with that too. Support is added as
+easily as listing the desired architectures in your `tplbuild.yml` file. For
+example:
 
 .. code-block:: yaml
+  :caption: tplbuild.yml
 
   platforms:
     - linux/amd64
@@ -228,11 +239,11 @@ platforms).
 
 Repeating our :code:`tplbuild base-build` operation will now build for every
 combination of platform and profile. When using :code:`tplbuild build` by default the
-native platform will be used of the builder. You can use the :code:`--platform` to
-specifically select the platform you'd like to use.
+native platform will be used of the builder. You can use the :code:`--platform`
+flag to specify the platform you'd like to use.
 
 Publishing Images
------------------
+_________________
 
 `tplbuild` can automatically publish your images to a registry. Unlike the
 :code:`tplbuild build` command, :code:`tplbuild publish` will build against all platforms and
@@ -241,13 +252,14 @@ first need to configure where the image should be published. For instance you
 could add the below line to your tplbuild.yml file.
 
 .. code-block:: yaml
+  :caption: tplbuild.yml
 
   stage_push_name: |
     msg555/{{ stage_name }}:{{ profile }}
 
 Note that this (and several other fields in tplbuild.yml) is itself a Jinja
 template to allow further customization. Now we can run :code:`tplbuild publish --profile release` and
-it will push our multiarchitecture image to msg555/my-app:release.
+it will push our multiarchitecture image to :code:`msg555/my-app:release`.
 
 
 Removed probably
@@ -384,30 +396,22 @@ Advanced Usage
 
 Advanced usage information!
 
-Library Reference
------------------
+References
+----------
 
-.. automodule:: tplbuild
-   :members:
-   :undoc-members:
-   :show-inheritance:
+.. toctree::
+  :caption: Configuration Reference
 
-.. automodule:: tplbuild.tplbuild
-   :members:
-   :undoc-members:
-   :show-inheritance:
+  config
+  
+.. toctree::
+  :caption: Library Reference
 
-.. automodule:: tplbuild.context
-   :members:
-   :undoc-members:
-   :show-inheritance:
+  library
 
-.. automodule:: tplbuild.config
-   :members:
-   :undoc-members:
-   :show-inheritance:
+.. toctree::
+  :caption: Changelist
+  :titlesonly:
 
-.. automodule:: tplbuild.images
-   :members:
-   :undoc-members:
-   :show-inheritance:
+  changelist/index
+

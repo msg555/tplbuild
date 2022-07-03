@@ -1,0 +1,7 @@
+Changelist
+==========
+
+.. toctree::
+  :glob:
+
+  changes-*

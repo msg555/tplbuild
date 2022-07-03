@@ -29,7 +29,7 @@ async def setup_build_test(name: str, user_config: Optional[UserConfig] = None):
             symlinks=True,
         )
         async with TplBuild.from_path(dst_dir, user_config=user_config) as tplbld:
-            tplbld.config.base_image_name = TEST_BASE_IMAGE_NAME
+            tplbld.config.base_image_repo = TEST_BASE_IMAGE_NAME
             yield dst_dir, tplbld
 
 

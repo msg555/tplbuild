@@ -160,11 +160,11 @@ class TplBuild:
         Return the base image name by rendering the base image name
         config template.
         """
-        if self.config.base_image_name is None:
-            raise TplBuildException("Must configure base_image_name to use base images")
+        if self.config.base_image_repo is None:
+            raise TplBuildException("Must configure base_image_repo to use base images")
         try:
             base_image_repo = self.jinja_render(
-                self.config.base_image_name,
+                self.config.base_image_repo,
                 dict(
                     stage_name=base_image.stage,
                     profile=base_image.profile,
@@ -247,7 +247,7 @@ class TplBuild:
             KeyError: If the base image does not exist or has not been built
             TplBuildException: If no base image repo is configured
         """
-        if self.config.base_image_name is None:
+        if self.config.base_image_repo is None:
             raise TplBuildException("No base image repo format configured")
 
         profile = profile or self.default_profile
@@ -475,10 +475,8 @@ class TplBuild:
                 repo=manifest_ref.repo,
                 ref=manifest.config.digest,
             )
-            config_raw_data = [
-                chunk
-                async for chunk in self.registry_client.ref_content_stream(config_ref)
-            ]
+            _, chunk_data = await self.registry_client.ref_content_stream(config_ref)
+            config_raw_data = [chunk async for chunk in chunk_data]
             config = json.loads(b"".join(config_raw_data).decode("utf-8"))
             image_platform = normalize_platform(
                 config["os"],
