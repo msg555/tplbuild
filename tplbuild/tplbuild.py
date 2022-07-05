@@ -196,12 +196,16 @@ class TplBuild:
         images are used for intermediate build operations and are not an output
         of the build themselves.
 
-        For every other image the :attr:`TplConfig.stage_image_name` template
-        will be used to determine the desired image name for the stage. This
-        name will be used to tag the built image and push to remote registries.
+        For every other image the image_names and push_names default values will
+        be substituted where needed and the templates will be evaluated.
         """
+        image_names = [self.config.stage_image_name]
+        push_names = [self.config.stage_push_name]
         if stage_config := self.config.stages.get(stage_name):
-            return stage_config.copy()
+            if stage_config.image_names is not None:
+                image_names = stage_config.image_names
+            if stage_config.push_names is not None:
+                push_names = stage_config.push_names
         if stage_name[0:5] in ("base-", "base_"):
             return StageConfig(base=True)
         if stage_name[0:5] in ("anon-", "anon_"):
@@ -212,20 +216,22 @@ class TplBuild:
             platform=platform,
         )
         try:
-            image_names = [self.jinja_render(self.config.stage_image_name, params)]
+            image_names = [
+                self.jinja_render(image_name, params) for image_name in image_names
+            ]
         except TplBuildTemplateException as exc:
             exc.update_message("Failed to render stage image name template")
             raise exc
 
-        push_names = []
-        if self.config.stage_push_name:
-            try:
-                push_names.append(
-                    self.jinja_render(self.config.stage_push_name, params)
-                )
-            except TplBuildTemplateException as exc:
-                exc.update_message("Failed to render stage push name template")
-                raise exc
+        try:
+            push_names = [
+                val
+                for push_name in push_names
+                if (val := self.jinja_render(push_name, params))
+            ]
+        except TplBuildTemplateException as exc:
+            exc.update_message("Failed to render stage push name template")
+            raise exc
 
         return StageConfig(
             image_names=image_names,
@@ -645,6 +651,7 @@ class TplBuild:
 
             # If we're really building a base image add its push name.
             if stage.base_image and stage.image is not stage.base_image:
+                stage.config.push_names = stage.config.push_names or []
                 stage.config.push_names.append(
                     self.get_base_image_name(stage.base_image)
                 )

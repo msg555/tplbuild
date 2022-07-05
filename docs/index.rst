@@ -14,8 +14,17 @@ the creation of `tplbuild` were
 syntax but it's recommended to use a builder among the list of officially
 :ref:`supported builders <Builders>`.
 
-The current release is version 0.0.1. See :ref:`installation:Installation` for
-information on installing `tplbuild`.
+Installation
+------------
+
+`tplbuild` can be installed through `pip`. This installs both the
+:code:`tplbuild` CLI utility and the `tplbuild` Python library.
+
+.. code-block:: sh
+
+  pip install tplbuild
+
+`tplbuild` is supported and tested on Python 3.8-3.10
 
 When should tplbuild be used?
 -----------------------------
@@ -38,7 +47,7 @@ include:
 - You are working alone
 - Reproducible builds are not important
 - You do not use Dockerfiles to build your container images
-- You want to use a builder other than the officially :ref:`supported builders`.
+- You want to use a builder other than the officially :ref:`supported builders <Builders>`.
 - You rely on other tools to build your images already that cannot be configured
   to use `tplbuild` (e.g. docker-compose build).
 
@@ -262,139 +271,97 @@ template to allow further customization. Now we can run :code:`tplbuild publish 
 it will push our multiarchitecture image to :code:`msg555/my-app:release`.
 
 
-Removed probably
-================
+How does tplbuild work internally?
+==================================
 
-The next three instructions copy in the package metadata of our node application
-and install them into the image. For some projects this step can be particularly
-time consuming. To improve this situation `tplbuild` makes it easy to split your
-project into *base images* and *published images*. The *base image* will contain
-the application environment and will be built infrequently; only when package
-dependencies change or to pull in security updates.
+`tplbuild` works by minimally parsing the Dockerfile syntax to construct a build
+graph. A `node` in this graph represents an image after some number of build
+steps where an `edge` represents a single build step in the Dockerfile (e.g. a
+:code:`RUN` or :code:`COPY` instruction). Using this build graph `tplbuild` can
+do several things:
 
-.. code-block:: Dockerfile
+- Collect and resolve all referenced *source* and *base* images
+- Compute a *content hash* of any image step
 
-  COPY . .
-  CMD ["node", "my-app.js"]
+  - Allows `tplbuild` to know when a base image is out of date
+  - Allows shared build work to be collapsed into a single node
 
-The final two commands copy in our application code and configure our image. The
-COPY command by default copies from the *build context*. The *build context* is
-a special image that contains the files you passed to the builder that were not
-excluded by a dockerignore file.
+- Allows build contexts to be sent once and shared if needed
 
+Once all *source* and *base* images have been resolved, the build graph is sent
+to the planner which breaks up the build into a series of builder invocations.
+The planner seeks first to maximize the amount of shared build steps between
+invocations while second minimizing the number of times the builder needs to be
+called.
 
+Finally, the build plan is sent to the executor which invokes the underlying
+build client with the desired level of parallelism as the dependencies of each
+build step complete. The executor may tag some intermediate images with a tag
+of the form :code:`tplbuild-$UUID`. This is done to ensure the intermediate
+image is not garbage collected by the builder until the build is complete. These
+intermediate images will be removed when the build exits or is interrupted.
 
-.. code-block:: Dockerfile
+What Dockerfile features are not supported?
+===========================================
 
-  # Start base image
-  FROM node:18 as base-my-app
+`tplbuild` will never attempt to support customizable frontends in a general
+sense (i.e. :code:`# syntax=frontend/image`). `tplbuild` will do its best to
+parse the Dockerfile but it's possible syntax features enabled by the frontend
+will not work as expected with `tplbuild`. For example, 
+:code:`docker/dockerfile:1.3-labs` added support for heredocs that `tplbuild`
+is not yet capable of parsing. As `tplbuild` matures, a list of officially
+supported frontend features and versions will be published.
 
-  WORKDIR /my-app
-  COPY package.json package-lock.json ./
-  RUN npm install --production
+Glossary
+========
 
-  # Start published image
-  FROM base-my-app as my-app
+There are several different types of images that `tplbuild` works with:
 
-  COPY . .
-  CMD ["node", "my-app.js"]
+- Source images
 
+  - Externally provided images (e.g. docker.io/ubuntu:22.04)
+  - Locked to a fixed digest by `tplbuild`
 
+- Base images
 
+  - A shared image with project dependencies installed
+  - Should be updated infrequently
+  - Build once, share among all users
 
-TODO WORK
-=========
+- Published image
 
-`tplbuild` splits up images involved in the build process into different
-categories; "published", "source", "base" images
+  - The final product; an image you wish to use or publish
 
-* Published images - The final product of the build process. Could be used locally
-    or published to a registry.
-* Source images - Images produced externally, served by a registry.
-* Base images - Build-once and reuse images where slow build steps and package
-    installations can be done. Stored in a registry and shared by all
-    developers.
+- Intermediate image
 
-.. _source_image:
+  - A partially built image produced as a byproduct of the build process. These
+    will typically be cleaned up by `tplbuild`.
 
-What are source images?
------------------------
+- Build stage
 
-From `tplbuild`'s perspective, a *source* image is an image created externally
-that's used as an input to your build. A source image is specified by the image
-repo (e.g. "docker.io/ubuntu") and a tag (e.g. "22.04").
+  - A Dockerfile can have multiple build stages. Each build stage begins with a
+    :code:`FROM` instruction and has a corresponding name.
+  - Published images and base images always correspond to a build stage.
 
-To help create repeatable builds, `tplbuild` uses a locking mechanism to pin
-the exact image digest to be used for each source image. This process mirrors
-what other package managers like `npm` or `pipenv` to insure repeatable builds.
-The digests are stored in the `.tplbuilddata.json` and our locked when first
-used in a build or when managed by the `source-update` sub-command.
+- Build context
 
-To facilitate scheduled image updates `tplbuild` provides the `source-update`
-command to update all or some of your source images to the latest published
-digest. The simplest version of this below will update the digest for all of
-the source images in your project:
-
-.. code-block:: sh
-
-  tplbuild source-update
-
-What are base images?
----------------------
-
-*Base* images are images.
-
-Unlike :ref:`source images <source_image>`, *base* images.
-
-
-- Environment setup
-- Download packages
-- Updates infrequently
-- Saves developer's time with expensive build operations
-- Provides prebuilt environment for CI
-
-
-What are top-level images?
---------------------------
-
-- Does not install external packages
-- Ideally operates only on the current codebase
-- Fast to build
-
-
-Features
---------
-
-Feature list!
-
-Quickstart
-----------
-
-Quickstart information!
-
-- Installation
-- Basic usage
-- Builds are graphs
-
-Examples
---------
-
-Example list
+  - A special build stage containing file data sent to the builder.
+  - Uses dockerignore syntax to control what files are sent.
 
 .. _Builders:
 
-Builders
---------
+Supported Builders
+------------------
+
+`tplbuild` currently officially supports the below builders.
 
 - docker
 - docker buildx
 - podman
 
+By default `tplbuild` will use the `docker` builder. You can configure
+which builder you want to use by updating your :ref:`user config <UserConfig>`.
 
-Advanced Usage
---------------
-
-Advanced usage information!
 
 References
 ----------

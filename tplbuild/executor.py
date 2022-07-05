@@ -242,9 +242,9 @@ class BuildExecutor:
             # relative order with push tags after tags.
             tags: Dict[str, bool] = {}
             for stage in build_op.stages:
-                for tag in stage.config.image_names:
+                for tag in stage.config.image_names or []:
                     tags.setdefault(tag, False)
-                for tag in stage.config.push_names:
+                for tag in stage.config.push_names or []:
                     tags[tag] = True
 
             # Wait for dependencies to finish

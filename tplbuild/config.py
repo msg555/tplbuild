@@ -21,7 +21,16 @@ def _normalize_rel_path(path: str) -> str:
     return f".{os.path.sep}{os.path.normpath(os.path.join(os.path.sep, path))[1:]}"
 
 
-class TplContextConfig(pydantic.BaseModel):
+class BaseModel(pydantic.BaseModel):
+    """Base model class configuration"""
+
+    class Config:
+        """Default config for our models"""
+
+        extra = pydantic.Extra.forbid
+
+
+class TplContextConfig(BaseModel):
     """
     Config model representing a build context.
     """
@@ -32,6 +41,8 @@ class TplContextConfig(pydantic.BaseModel):
     base_dir: str = "."
     #: The umask as a three digit octal string. This may also be set to
     #:     None if the context permissions should be passed through directly.
+    #:     This parameter helps ensure base images are stable across developers
+    #:     who may have different group/all permissions set.
     umask: Optional[str] = "022"
     #: The ignore_file to load patterns from. If this and :attr:`ignore`
     #:     are both None then this will attempt to load ".dockerignore", using
@@ -55,7 +66,7 @@ class TplContextConfig(pydantic.BaseModel):
         return _normalize_rel_path(v)
 
 
-class ClientCommand(pydantic.BaseModel):
+class ClientCommand(BaseModel):
     """
     Configuration to invoke an external build command.
 
@@ -100,7 +111,7 @@ class ClientCommand(pydantic.BaseModel):
         return args, environment
 
 
-class ClientConfig(pydantic.BaseModel):
+class ClientConfig(BaseModel):
     """
     Configuration of commands to perform various container operations. This is
     meant to be a generic interface that could plug into a variety of container
@@ -173,7 +184,7 @@ def get_builtin_configs() -> Dict[str, ClientConfig]:
     }
 
 
-class UserSSLContext(pydantic.BaseModel):
+class UserSSLContext(BaseModel):
     """Custom SSL context used to contact registries"""
 
     #: Disable SSL/TLS verification
@@ -204,33 +215,40 @@ class UserSSLContext(pydantic.BaseModel):
         return ctx
 
 
-class StageConfig(pydantic.BaseModel):
+class StageConfig(BaseModel):
     """Configuration data for a named build stage"""
 
-    #: Is the stage a base stage
+    #: Is the stage a base stage. If True then :attr:`image_names` and
+    #: :attr:`push_names` must be left as None.
     base: bool = False
-    #: All image names to assign to the built image. Must be empty for base images.
-    image_names: List[str] = []
-    #: All image names to assign and then push to remote registries.
-    #: Must be empty for base images.
-    push_names: List[str] = []
+    #: All image names to assign to the built image. These values are templates
+    #: that will be rendered in the same manner as
+    #: :attr:`tplbuild.config.TplConfig.stage_image_name`. If left as None
+    #: TplConfig.stage_image_name will be used instead as the default.
+    image_names: Optional[List[str]] = None
+    #: All image names to assign and then push to remote registries when
+    #: when publishing images. These values are templates that will be rendered
+    #:  in the same manner as
+    #: :attr:`tplbuild.config.TplConfig.stage_push_name`. If left as None
+    #: TplConfig.stage_push_name will be used instead as the default.
+    push_names: Optional[List[str]] = None
 
     @pydantic.validator("image_names")
     def image_names_empty_for_base(cls, v, values):
         """Ensure base images have no image_names"""
-        if v and values["base"]:
+        if v is not None and values["base"]:
             raise ValueError("image_names must be empty for base images")
         return v
 
     @pydantic.validator("push_names")
     def push_names_empty_for_base(cls, v, values):
         """Ensure base images have no push_names"""
-        if v and values["base"]:
+        if v is not None and values["base"]:
             raise ValueError("push_names must be empty for base images")
         return v
 
 
-class UserConfig(pydantic.BaseModel):
+class UserConfig(BaseModel):
     """User settings controlling tplbuild behavior"""
 
     #: Must be "1.0"
@@ -300,7 +318,7 @@ class UserConfig(pydantic.BaseModel):
         return v
 
 
-class TplConfig(pydantic.BaseModel):
+class TplConfig(BaseModel):
     """Configuration settings for a single tplbuild project"""
 
     #: Must be "1.0"
@@ -340,7 +358,10 @@ class TplConfig(pydantic.BaseModel):
     default_profile: str = ""
     #: A set of named build context configurations. These contexts may
     #:     be referred to by name in the build file and should be unique
-    #:     among all other stages.
+    #:     among all other stages. If there is a context named "default" it
+    #:     will be used as the default build context. Otherwise the first
+    #:     listed context will be treated as the default. Any COPY instruction
+    # ;     may use --from=context_name to copy from a specific named context.
     contexts: Dict[str, TplContextConfig] = {"default": TplContextConfig()}
     #: A mapping of stage names to stage configs. This can be used to override
     #: the default behavior of tplbuild or apply different or more than just a
@@ -405,7 +426,7 @@ class TplConfig(pydantic.BaseModel):
         return v  # _normalize_rel_path(v)
 
 
-class BaseImageBuildData(pydantic.BaseModel):
+class BaseImageBuildData(BaseModel):
     """
     Stores content addressed keys used to store and retrieve base images
     from the remote registry.
@@ -417,7 +438,7 @@ class BaseImageBuildData(pydantic.BaseModel):
     image_digest: str
 
 
-class BuildData(pydantic.BaseModel):
+class BuildData(BaseModel):
     """
     Any build data that is managed by tplbuild itself rather than being
     configuration data provided by the user. Right now this includes a

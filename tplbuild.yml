@@ -30,6 +30,10 @@ profiles:
     env: release
     python_version: '3.8'
 
+stages:
+  tplbuild:
+    image_names: [abc, def]
+
 contexts:
   default:
     ignore: | # Set 

@@ -44,7 +44,7 @@ class PublishUtility(CliUtility):
                 platform=platform,
             )
             for stage_name, stage_data in stage_mapping.items():
-                stage_data.config.image_names.clear()
+                stage_data.config.image_names = []
                 multi_stage = multi_stage_mapping.setdefault(stage_name, stage_data)
 
                 if multi_stage is stage_data:

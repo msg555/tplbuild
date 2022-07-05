@@ -41,7 +41,7 @@ class BuildUtility(CliUtility):
 
         # Remove push names
         for stage_data in stage_mapping.values():
-            stage_data.config.push_names.clear()
+            stage_data.config.push_names = []
 
         # Figure out what images to build, override image_names where requested.
         images_to_build = set()
