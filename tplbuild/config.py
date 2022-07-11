@@ -67,15 +67,7 @@ class TplContextConfig(BaseModel):
 
 
 class ClientCommand(BaseModel):
-    """
-    Configuration to invoke an external build command.
-
-    Typically both :attr:`args` and the values of :attr:`environment` will be
-    subject to keyword substitutions. For instance build commands will substitute
-    any instance of the string "{image}" with the desired image tag. This is to
-    be similar to the typical Python format implementation (although does not
-    use `str.format` for security reasons).
-    """
+    """Configuration to invoke an external build command."""
 
     #: A jinja template used to construct invoke arguments and environment
     #: variables based on the template arguments passed. Depending on the
@@ -90,7 +82,10 @@ class ClientCommand(BaseModel):
         jinja_env: jinja2.Environment,
         params: Dict[str, str],
     ) -> Tuple[List[str], Dict[str, str]]:
-        """Return the list of arguments after being rendered with the given params"""
+        """
+        Return the list of arguments and addition environment variables to
+        pass to execute the rendered command.
+        """
         args: List[str] = []
         environment: Dict[str, str] = {}
 
@@ -228,7 +223,7 @@ class StageConfig(BaseModel):
     image_names: Optional[List[str]] = None
     #: All image names to assign and then push to remote registries when
     #: when publishing images. These values are templates that will be rendered
-    #:  in the same manner as
+    #: in the same manner as
     #: :attr:`tplbuild.config.TplConfig.stage_push_name`. If left as None
     #: TplConfig.stage_push_name will be used instead as the default.
     push_names: Optional[List[str]] = None
@@ -274,7 +269,7 @@ class UserConfig(BaseModel):
     #: Maximum number of times a push or pull will be retried before failing a build.
     push_retry: int = 0
     #: Configure the SSL context used to contact registries. This only controls
-    #: accesses made by tplbuild itself. The client builder will need to be
+    #: accesses made by tplbuild itself. The client builder may need to be
     #: configured separately.
     ssl_context: UserSSLContext = UserSSLContext()
     #: The path to the container auth configuration file to use when contacting

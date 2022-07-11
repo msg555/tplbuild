@@ -9,6 +9,7 @@ class BuildUtility(CliUtility):
     """CLI utility entrypoint for building top-level images"""
 
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
+        parser.description = "build top-level images locally"
         parser.add_argument(
             "image",
             nargs="*",

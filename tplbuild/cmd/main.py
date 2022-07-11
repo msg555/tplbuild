@@ -166,8 +166,8 @@ def setup_logging(verbose: int) -> None:
 def load_user_config(args) -> UserConfig:
     """Load the user config. Override with settings from args as requested."""
     user_config_locations = {
-        os.path.join(args.base_dir, ".tplbuildconfig.yml"),
         os.path.expanduser("~/.tplbuildconfig.yml"),
+        os.path.join(args.base_dir, ".tplbuildconfig.yml"),
     }
     user_config_data: Dict = {}
     for user_config_path in user_config_locations:

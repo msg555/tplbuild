@@ -12,6 +12,7 @@ class PublishUtility(CliUtility):
     """CLI utility entrypoint for building and publishing top-level images"""
 
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
+        parser.description = "Build and publish top-level images to repositories"
         parser.add_argument(
             "image",
             nargs="*",

@@ -9,6 +9,7 @@ class SourceLookupUtility(CliUtility):
     """CLI utility entrypoint for looking up source images"""
 
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
+        parser.description = "print the full image name with digest of source images"
         parser.add_argument(
             "source",
             nargs="*",

@@ -13,6 +13,9 @@ class SourceUpdateUtility(CliUtility):
     """CLI utility entrypoint for updating source images"""
 
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
+        parser.description = (
+            "explicitly update source image digests from their repositories"
+        )
         parser.add_argument(
             "source",
             nargs="*",

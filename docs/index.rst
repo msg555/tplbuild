@@ -367,6 +367,11 @@ References
 ----------
 
 .. toctree::
+  :caption: Command Line Reference
+
+  cli
+
+.. toctree::
   :caption: Configuration Reference
 
   config

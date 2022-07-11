@@ -32,10 +32,14 @@ class BasePruneUtility(CliUtility):
     """CLI utility entrypoint for building base images"""
 
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
+        parser.description = (
+            "Remove base images not referenced by a passed git commit. "
+            "Images deleted cannot be recovered without rebuilding."
+        )
         parser.add_argument(
             "git_commits",
             nargs="*",
-            help="The base image stage name to lookup",
+            help="A list of git commits to preserve base images",
         )
         parser.add_argument(
             "--force",

@@ -12,6 +12,7 @@ class BaseBuildUtility(CliUtility):
     """CLI utility entrypoint for building base images"""
 
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
+        parser.description = "rebuild any out-of-date base images"
         parser.add_argument(
             "image",
             nargs="*",

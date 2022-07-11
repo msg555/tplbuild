@@ -4,10 +4,10 @@ Configuration Reference
 
 `tplbuild` has two main configuration files. The project configuration controls
 how `tplbuild` interacts and behaves with a specific `tplbuild` project. It
-should be included in source control and should be shared among all developers
+should be included in source control and shared among all developers
 on the project. The user configuration, on the other hand, controls user-level
 configuration options like which builder to use, what level of parallelism to
-build with, and how to authenticate with registries.
+build with, and how to authenticate with registries and is not shared.
 
 .. _ProjectConfig:
 
@@ -32,7 +32,7 @@ is given by the :class:`tplbuild.config.TplConfig` model. An example
   base_image_repo: docker.myorg.com/base-{stage_name}
 
   # Define how to tag top-level images.
-  stage_image_name: {{ stage_name }}
+  stage_image_name: "{{ stage_name }}"
 
   # Define how to publish top-level images to a registry.
   stage_push_name: msg555/{{ stage_name }}:{{ profile }}
@@ -70,7 +70,19 @@ is given by the :class:`tplbuild.config.TplConfig` model. An example
       base: yes
     my-main-image:
       base: no
+
+  # Configure where tplbuild will look for the entrypoint template and any
+  # other templates referenced with include statements.
+  template_paths:
+    - build
+    - build/lib
+
+  # Define the main template entrypoint to render all stages
+  template_entrypoint: Dockerfile
     
+
+Full documentation of each field within the tplbuild configure file can be found
+below:
 
 .. autopydantic_model:: tplbuild.config.TplConfig
 
@@ -82,6 +94,16 @@ is given by the :class:`tplbuild.config.TplConfig` model. An example
 
 User Config
 ===========
+
+The user configuration controls configuration options that are not specific to
+a particular project like what builder backend to use. `tplbuild` will look for
+a user configuration in the following places
+
+- ~/.tplbuildconfig.yml
+- .tplbuildconfig.yml
+
+If multiple configuration files are present the top-level values of the later
+configuration files will overwrite the earlier ones.
 
 .. autopydantic_model:: tplbuild.config.UserConfig
 

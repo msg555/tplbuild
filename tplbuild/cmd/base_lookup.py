@@ -9,6 +9,7 @@ class BaseLookupUtility(CliUtility):
     """CLI utility entrypoint for building base images"""
 
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
+        parser.description = "print the full image name of the requested base images"
         parser.add_argument(
             "image",
             nargs="*",
