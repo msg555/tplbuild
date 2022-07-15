@@ -2,7 +2,7 @@ import contextlib
 import json
 import os
 import tempfile
-from typing import Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 
 def line_reader(document: str) -> Iterable[Tuple[int, str]]:
@@ -144,3 +144,28 @@ def ignore_escape(path: str) -> str:
     """
     special_chars = "\\*?[]"
     return "".join("\\" + ch if ch in special_chars else ch for ch in path)
+
+
+def deep_merge_json(lhs: Any, rhs: Any) -> Any:
+    """
+    Merge JSON-like data `rhs` into `lhs`. This will only merge dicts, lists
+    will simply replace rather than concatenate.
+
+    This will not modify any objects referenced by `lhs` or `rhs` but may
+    return an object which points to objects originally in `lhs` and `rhs`.
+    """
+
+    if not isinstance(lhs, dict) or not isinstance(rhs, dict):
+        return rhs
+    if not rhs:
+        return lhs
+    if not lhs:
+        return rhs
+
+    result = dict(lhs)
+    for key, val in rhs.items():
+        lval = lhs.setdefault(key, val)
+        if lval is not val:
+            result[key] = deep_merge_json(lval, val)
+
+    return result

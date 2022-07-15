@@ -44,9 +44,11 @@ class TplBuildTemplateException(TplBuildException):
 
     def __init__(self, message) -> None:
         more_message = ""
-        exc_info = sys.exc_info()
-        if exc_info:
-            more_message = _extract_jinja_frames(exc_info[2])
+        exc_type, exc_val, exc_tb = sys.exc_info()
+        if exc_type:
+            more_message = (
+                f"{exc_type.__name__}: {exc_val}\n{_extract_jinja_frames(exc_tb)}"
+            )
         super().__init__(message, more_message=more_message)
 
 

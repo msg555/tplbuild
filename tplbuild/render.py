@@ -69,7 +69,8 @@ class _LateImageReference(ImageDefinition):
 def _render_context(
     tplbld: TplBuild,
     context_config: TplContextConfig,
-    profile_data: Dict[str, Any],
+    profile: str,
+    render_vars: Dict[str, Any],
     stage_desc: StageDescriptor,
 ) -> ContextImage:
     """
@@ -101,7 +102,8 @@ def _render_context(
             dict(
                 platform=stage_desc.platform,
                 user_config=tplbld.user_config,
-                **profile_data,
+                profile=profile,
+                vars=render_vars,
             ),
             file_env=True,
         )
@@ -185,7 +187,7 @@ def _resolve_late_references(stages: Dict[str, StageData], platform: str) -> Non
 
 
 def render(
-    tplbld: TplBuild, profile: str, profile_data: Dict[str, Any], platform: str
+    tplbld: TplBuild, profile: str, render_vars: Dict[str, Any], platform: str
 ) -> Dict[str, StageData]:
     """
     Renders all build contexts and stages into its graph representation.
@@ -204,7 +206,8 @@ def render(
             image=_render_context(
                 tplbld,
                 context_config,
-                profile_data,
+                profile,
+                render_vars,
                 make_stage_desc(context_name),
             ),
             config=StageConfig(),
@@ -221,20 +224,17 @@ def render(
     elif result:
         default_context = next(iter(result.values())).image
 
-    try:
-        dockerfile_data = tplbld.jinja_render(
-            tplbld.config.template_entrypoint,
-            dict(
-                platform=platform,
-                user_config=tplbld.user_config,
-                **profile_data,
-            ),
-            file_template=True,
-            file_env=True,
-        )
-    except TplBuildTemplateException as exc:
-        exc.update_message(f"Failed to render build file: {exc}")
-        raise
+    dockerfile_data = tplbld.jinja_render(
+        tplbld.config.template_entrypoint,
+        dict(
+            platform=platform,
+            user_config=tplbld.user_config,
+            profile=profile,
+            vars=render_vars,
+        ),
+        file_template=True,
+        file_env=True,
+    )
 
     @dataclasses.dataclass
     class ActiveImage:

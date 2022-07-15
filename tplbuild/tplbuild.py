@@ -30,7 +30,7 @@ from .graph import hash_graph, visit_graph
 from .images import BaseImage, ImageDefinition, SourceImage, StageData
 from .output import OutputStreamer
 from .plan import BuildOperation, BuildPlanner
-from .utils import ignore_escape, open_and_swap
+from .utils import deep_merge_json, ignore_escape, open_and_swap
 
 LOGGER = logging.getLogger(__name__)
 
@@ -93,11 +93,12 @@ class TplBuild:
         self.custom_client = bool(registry_client)
         self.registry_client = registry_client or AsyncRegistryClient()
         self.executor = BuildExecutor(self)
-        self.jinja_env = jinja2.Environment()
+        self.jinja_env = jinja2.Environment(undefined=jinja2.StrictUndefined)
         self.jinja_file_env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(
                 [os.path.join(base_dir, path) for path in config.template_paths]
-            )
+            ),
+            undefined=jinja2.StrictUndefined,
         )
         self.jinja_env.filters["shell_escape"] = shlex.quote
         self.jinja_env.filters["ignore_escape"] = ignore_escape
@@ -293,7 +294,12 @@ class TplBuild:
                     return platform
         return self.config.platforms[0]
 
-    def get_render_context(self, profile: str) -> Dict[str, Any]:
+    def get_render_vars(
+        self,
+        profile: str,
+        *,
+        extra_vars: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Returns the render context to pass into Jinja to render the build file
         for the given profile.
@@ -308,16 +314,14 @@ class TplBuild:
                     f"Profile {repr(profile)} does not exist"
                 ) from exc
 
-        return {
-            "profile": profile,
-            **profile_data,
-        }
+        return deep_merge_json(profile_data, extra_vars or {})
 
     async def render(
         self,
         *,
         profile: str = "",
         platform: str = "",
+        extra_vars: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, StageData]:
         """
         Render all contexts and stages into StageData.
@@ -331,7 +335,8 @@ class TplBuild:
 
         profile = profile or self.default_profile
         platform = platform or await self.get_default_platform()
-        return render(self, profile, self.get_render_context(profile), platform)
+        render_vars = self.get_render_vars(profile, extra_vars=extra_vars)
+        return render(self, profile, render_vars, platform)
 
     def plan(
         self,

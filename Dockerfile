@@ -1,4 +1,4 @@
-FROM docker.io/library/python:{{ python_version }} AS base-tplbuild
+FROM docker.io/library/python:{{ vars.python_version }} AS base-tplbuild
 
 RUN apt update \
  && apt install -y podman \
@@ -8,7 +8,7 @@ COPY --from=docker.io/library/docker:dind /usr/local/bin/docker /bin/
 
 WORKDIR /tplbuild
 
-{% if env == "dev" -%}
+{% if vars.env == "dev" -%}
 COPY requirements.txt requirements-dev.txt ./
 RUN pip install -r requirements.txt -r requirements-dev.txt
 {% else -%}
