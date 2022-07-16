@@ -43,7 +43,7 @@ is given by the :class:`tplbuild.config.TplConfig` model. An example
     - linux/arm64
 
   # Define build profiles. Each profile can be any free-form yaml data that
-  # will be made available to the Dockerfile Jinja template when rendering.
+  # will be made available when rendering under the variable name `vars`.
   default_profile: dev 
   profiles:
     dev:

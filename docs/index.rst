@@ -170,15 +170,16 @@ ________
 
 Now suppose we wanted to support a "dev" and "release" build of our image. After
 all, we don't want our devlopment packages installed in our release image.
-Luckily `tplbuild` transforms our Dockerfile into a Jinja template. We can
+To support this `tplbuild` renders our Dockerfile as a Jinja templates allowing
+us to vary our build logic depending on variables. We can
 update our :code:`npm install` command to look like this instead:
 
 .. code-block:: Dockerfile
 
-  RUN npm install{% if production %} --production{% endif %}
+  RUN npm install{% if vars.production %} --production{% endif %}
 
 
-To define this `production` flag we use "profiles". A profile is just a mapping
+To define this `vars.production` flag we use "profiles". A profile is just a mapping
 of key/value data that is passed to the Jinja template. We can add *default_profile* and
 *profiles* configurations to our tplbuild.yml file to define this new flag.
 
@@ -204,7 +205,7 @@ to be
 
 .. code-block:: Dockerfile
   
-  FROM node:{{ node_version }} AS base-my-app
+  FROM node:{{ vars.node_version }} AS base-my-app
 
 And update our profiles to look like
 
@@ -367,9 +368,10 @@ References
 ----------
 
 .. toctree::
-  :caption: Command Line Reference
+  :caption: User Manual
 
   cli
+  rendering
 
 .. toctree::
   :caption: Configuration Reference

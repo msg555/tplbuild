@@ -13,7 +13,7 @@ Build
 =====
 
 Build some or all top-level images for a given profile and platform.
-This is useful when building images to use locally.
+This is useful when building images to use/test locally.
 
 Sample invocations:
 

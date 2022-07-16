@@ -10,11 +10,6 @@ import yaml
 
 from .exceptions import TplBuildException, TplBuildTemplateException
 
-RESERVED_PROFILE_KEYS = {
-    "begin_stage",
-    "platform",
-}
-
 
 def _normalize_rel_path(path: str) -> str:
     """Normalize and coerce a path into a relative path."""
@@ -350,6 +345,8 @@ class TplConfig(BaseModel):
     profiles: Dict[str, Dict[str, Any]] = {"default": {}}
     #: The name of the default profile to use. If this is empty
     #:     the first profile name from :attr:`profiles` will be used instead.
+    #:     Profile data will be made availble when rendering under the
+    #:     variable name `vars`.
     default_profile: str = ""
     #: A set of named build context configurations. These contexts may
     #:     be referred to by name in the build file and should be unique
@@ -390,17 +387,6 @@ class TplConfig(BaseModel):
         """Make sure all profile names are non-empty"""
         if any(profile_name == "" for profile_name in v):
             raise ValueError("profile name cannot be empty")
-        return v
-
-    @pydantic.validator("profiles")
-    def profile_reserved_keys(cls, v):
-        """Make sure profile data does not use reserved keys"""
-        for profile, profile_data in v.items():
-            for reserved_key in RESERVED_PROFILE_KEYS:
-                if reserved_key in profile_data:
-                    raise ValueError(
-                        f"Profile {repr(profile)} cannot have reserved key {repr(reserved_key)}"
-                    )
         return v
 
     @pydantic.validator("default_profile")
