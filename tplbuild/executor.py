@@ -360,7 +360,7 @@ class BuildExecutor:
                             os=image_os,
                             variant=variant,
                         ),
-                        **sub_descriptor.dict(by_alias=True),
+                        **sub_descriptor.dict(by_alias=True, exclude_unset=True),
                     )
                 )
 
