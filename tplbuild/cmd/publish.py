@@ -6,6 +6,7 @@ from tplbuild.cmd.utility import CliUtility
 from tplbuild.exceptions import TplBuildException
 from tplbuild.images import MultiPlatformImage, StageData
 from tplbuild.tplbuild import TplBuild
+from tplbuild.utils import compute_extra_vars
 
 
 class PublishUtility(CliUtility):
@@ -32,9 +33,25 @@ class PublishUtility(CliUtility):
             help="Platform to build images for. Can be given multiple times. "
             "Defaults to all configured platforms.",
         )
+        parser.add_argument(
+            "--set",
+            dest="set_args",
+            action="append",
+            type=lambda val: (False, val),
+            help="Set a custom variable for the build in the format '--set a.b=c'",
+        )
+        parser.add_argument(
+            "--set-json",
+            dest="set_args",
+            action="append",
+            type=lambda val: (True, val),
+            help="Like --set except the value will be decoded as a JSON payload."
+            " e.g. '--set-json a.b=[1,\"xyz\",null]'",
+        )
 
     async def main(self, args, tplbld: TplBuild) -> int:
         profile = args.profile or tplbld.config.default_profile
+        extra_vars = compute_extra_vars(args.set_args or [])
         platforms = args.platform or tplbld.config.platforms
 
         # Render all build stages
@@ -43,6 +60,7 @@ class PublishUtility(CliUtility):
             stage_mapping = await tplbld.render(
                 profile=profile,
                 platform=platform,
+                extra_vars=extra_vars,
             )
             for stage_name, stage_data in stage_mapping.items():
                 stage_data.config.image_names = []

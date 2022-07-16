@@ -2,7 +2,7 @@ import contextlib
 import json
 import os
 import tempfile
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 
 def line_reader(document: str) -> Iterable[Tuple[int, str]]:
@@ -164,8 +164,52 @@ def deep_merge_json(lhs: Any, rhs: Any) -> Any:
 
     result = dict(lhs)
     for key, val in rhs.items():
-        lval = lhs.setdefault(key, val)
+        lval = result.setdefault(key, val)
         if lval is not val:
             result[key] = deep_merge_json(lval, val)
+
+    return result
+
+
+def compute_extra_vars(set_args: Sequence[Tuple[bool, str]]) -> Dict[str, Any]:
+    """
+    Convert arguments passed to --set and --set-json into a dictionary of
+    arguments to pass to the render. Later arguments have precedence over
+    earlier arguments.
+    """
+    result: Dict[str, Any] = {}
+
+    def _set_value(key: str, val: Any):
+        obj = result
+        key_parts = key.split(".")
+        for key_part in key_parts[:-1]:
+            obj = obj.setdefault(key_part, {})
+            if not isinstance(obj, dict):
+                obj[key_part] = {}
+        obj[key_parts[-1]] = val
+
+    for is_json, set_arg in set_args:
+        arg_type = "--set-json" if is_json else "--set"
+
+        equal_pos = set_arg.find("=")
+        if equal_pos == -1:
+            raise ValueError(f"Invalid {arg_type} value, expected '='")
+
+        key = set_arg[:equal_pos]
+        val = set_arg[equal_pos + 1 :]
+        if is_json:
+            try:
+                val = json.loads(val)
+            except ValueError as exc:
+                raise ValueError(f"Invalid {arg_type} value JSON") from exc
+
+        key_parts = key.split(".")
+        merge_value = val
+        for key_part in reversed(key_parts):
+            if not key_part:
+                raise ValueError(f"Cannot {arg_type} variable with empty key part")
+            merge_value = {key_part: merge_value}  # type: ignore
+
+        result = deep_merge_json(result, merge_value)
 
     return result

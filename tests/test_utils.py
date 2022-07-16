@@ -1,6 +1,8 @@
 import pytest
 
 from tplbuild.utils import (
+    compute_extra_vars,
+    deep_merge_json,
     extract_command_flags,
     format_command_with_flags,
     ignore_escape,
@@ -87,3 +89,99 @@ def test_command_flags(line, exp_new_line, exp_flags, exp_format_line):
 def test_ignore_escape(a, b):
     """Test ignore_escape behavior"""
     assert ignore_escape(a) == b
+
+
+@pytest.mark.unit
+def test_deep_merge_simple():
+    """Test edge behavior of deep merge"""
+    x = {}
+    y = {"a": "b"}
+    z = {"c": "d"}
+    o = [0, 1, 2]
+    f = [3, 4, 5]
+    assert deep_merge_json(x, y) is y
+    assert deep_merge_json(y, x) is y
+    assert deep_merge_json(y, z) == {"a": "b", "c": "d"}
+    assert deep_merge_json(z, y) == {"a": "b", "c": "d"}
+    assert deep_merge_json(y, o) is o
+    assert deep_merge_json(o, y) is y
+    assert deep_merge_json(o, f) is f
+    assert deep_merge_json(f, o) is o
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "lhs,rhs,result",
+    [
+        pytest.param(
+            {"a": {"b": "c"}},
+            {"a": {"d": "e"}},
+            {"a": {"b": "c", "d": "e"}},
+            id="merge dicts",
+        ),
+        pytest.param({"a": {"b": "c"}}, {"a": 123}, {"a": 123}, id="overwrite dicts"),
+    ],
+)
+def test_deep_merge(lhs, rhs, result):
+    """Test deep merge behavior"""
+    assert deep_merge_json(lhs, rhs) == result
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "set_args,expected",
+    [
+        pytest.param([], {}, id="no args"),
+        pytest.param([(False, "a=b=c")], {"a": "b=c"}, id="more-equal"),
+        pytest.param([(False, "a=123")], {"a": "123"}, id="int-like set"),
+        pytest.param([(True, "a=123")], {"a": 123}, id="int set-json"),
+        pytest.param(
+            [(False, "a.b.c=x"), (False, "a.b.d=y")],
+            {"a": {"b": {"c": "x", "d": "y"}}},
+            id="set nested",
+        ),
+        pytest.param(
+            [(True, 'a={"b":"c"}'), (True, 'a={"d":"e"}')],
+            {"a": {"b": "c", "d": "e"}},
+            id="merged",
+        ),
+        pytest.param(
+            [(True, 'a={"b":"c"}'), (False, "a=x")], {"a": "x"}, id="overwrite"
+        ),
+    ],
+)
+def test_compute_extra_vars(set_args, expected):
+    """Test compute_extra_vars behavior"""
+    assert compute_extra_vars(set_args) == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "set_args,err_match",
+    [
+        pytest.param(
+            [(False, "x")], "Invalid --set value, expected '='", id="no equal"
+        ),
+        pytest.param(
+            [(True, "x")], "Invalid --set-json value, expected '='", id="no equal json"
+        ),
+        pytest.param(
+            [(False, "=x")], "Cannot --set variable with empty key part", id="no key"
+        ),
+        pytest.param(
+            [(True, "=1")],
+            "Cannot --set-json variable with empty key",
+            id="no key json",
+        ),
+        pytest.param([(True, "a={")], "Invalid --set-json value JSON", id="bad json"),
+        pytest.param(
+            [(False, "a..b=c")],
+            "Cannot --set variable with empty key part",
+            id="empty key part",
+        ),
+    ],
+)
+def test_compute_extra_vars_error(set_args, err_match):
+    """Test compute_extra_vars error handling"""
+    with pytest.raises(ValueError, match=err_match):
+        compute_extra_vars(set_args)

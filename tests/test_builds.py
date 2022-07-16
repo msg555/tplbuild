@@ -37,7 +37,12 @@ async def setup_build_test(name: str, user_config: Optional[UserConfig] = None):
 async def test_smartcopy():
     """Test that the smartcopy build works as expected."""
     params = dict(
-        image=[], profile=[], platform=[], update_salt=False, update_sources=False
+        image=[],
+        profile=[],
+        platform=[],
+        set_args=[],
+        update_salt=False,
+        update_sources=False,
     )
     async with setup_build_test("smartcopy") as (base_dir, tplbld):
         result = await BaseBuildUtility().main(
@@ -86,7 +91,7 @@ async def test_smartcopy():
 @pytest.mark.build
 async def test_multifile():
     """Test that the multifile build works as expected."""
-    params = dict(image=[], profile=[], platform=[])
+    params = dict(image=[], profile=[], platform=[], set_args=[])
     async with setup_build_test("multifile") as (_, tplbld):
         result = await BuildUtility().main(
             Namespace(**params),
