@@ -6,7 +6,10 @@ stage_push_name: |
   docker.io/msg555/{{ stage_name }}
   {%- if profile != "release" -%}
     -{{ profile }}
-  {%- endif %}
+  {%- endif -%}
+  {%- if vars.tag is defined -%}
+    :{{ vars.tag }}
+  {%- endif -%}
 
 dockerfile_syntax: 
   docker/dockerfile:1.4

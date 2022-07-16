@@ -181,7 +181,7 @@ class TplBuild:
         return f"{base_image_repo}:{base_image.content_hash}"
 
     def get_stage_config(
-        self, stage_name: str, profile: str, platform: str
+        self, stage_name: str, profile: str, platform: str, render_vars: Dict[str, Any]
     ) -> StageConfig:
         """
         Return the StageConfig for the given stage name. This will first check
@@ -215,6 +215,7 @@ class TplBuild:
             stage_name=stage_name,
             profile=profile,
             platform=platform,
+            vars=render_vars,
         )
         try:
             image_names = [

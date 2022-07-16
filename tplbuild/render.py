@@ -262,7 +262,7 @@ def render(
         stage_data = StageData(
             name=img.name,
             image=img.image,
-            config=tplbld.get_stage_config(img.name, profile, platform),
+            config=tplbld.get_stage_config(img.name, profile, platform, render_vars),
         )
         if stage_data.config.base:
             stage_data.base_image = BaseImage(

@@ -326,11 +326,11 @@ class TplConfig(BaseModel):
     #: that rendered the image, and the name of the build platform respectively.
     base_image_repo: Optional[str] = None
     #: A Jinja template that renders to the default image name for a
-    #: given stage_name. Like :attr:`base_image_repo` the template is passed
+    #: given stage_name. This template is passed "vars",
     #: "stage_name", "profile", "and "platform" parameters.
     stage_image_name: str = "{{ stage_name}}"
     #: A Jinja template that renders to the default push name for a
-    #: given stage_name. Like :attr:`base_image_repo` the template is passed
+    #: given stage_name. This template is passed "vars",
     #: "stage_name", "profile", "and "platform" parameters.
     stage_push_name: str = "{{ stage_name}}"
     #: The dockerfile "syntax" to use as the build frontend when running against
