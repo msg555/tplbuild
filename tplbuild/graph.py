@@ -2,7 +2,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from .exceptions import TplBuildException
 from .hashing import json_hash
-from .images import ImageDefinition
+from .images import BaseImage, ImageDefinition
 
 VisitFunc = Callable[[ImageDefinition], ImageDefinition]
 VisitFuncPost = Callable[[ImageDefinition], None]
@@ -106,14 +106,18 @@ def hash_graph(
     hash_mapping: Dict[ImageDefinition, str] = {}
 
     def hash_node(image: ImageDefinition) -> None:
-        hash_mapping[image] = json_hash(
-            [
-                salt,
-                type(image).__name__,
-                image.local_hash_data(symbolic),
-                *(hash_mapping[dep] for dep in image.get_dependencies()),
-            ]
-        )
+        if isinstance(image, BaseImage) and image.image is not None:
+            # Unwrap BaseImage references
+            hash_mapping[image] = hash_mapping[image.image]
+        else:
+            hash_mapping[image] = json_hash(
+                [
+                    salt,
+                    type(image).__name__,
+                    image.local_hash_data(symbolic),
+                    *(hash_mapping[dep] for dep in image.get_dependencies()),
+                ]
+            )
 
     visit_graph(roots, lambda image: image, visit_func_post=hash_node)
     return hash_mapping

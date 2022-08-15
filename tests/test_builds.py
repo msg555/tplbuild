@@ -98,3 +98,32 @@ async def test_multifile():
             tplbld,
         )
         assert result == 0
+
+
+@pytest.mark.build
+async def test_tree():
+    """Test that branching build stages work as expected."""
+    params = dict(
+        image=[],
+        profile=[],
+        platform=[],
+        set_args=[],
+        update_salt=False,
+        update_sources=False,
+    )
+    async with setup_build_test("tree") as (base_dir, tplbld):
+        result = await BaseBuildUtility().main(
+            Namespace(**params, check=False),
+            tplbld,
+        )
+        assert result == 0
+
+        with open(os.path.join(base_dir, "abc"), "wb") as fdata:
+            fdata.write(b"abc\n")
+        result = await BuildUtility().main(
+            Namespace(**params),
+            tplbld,
+        )
+        assert result == 0
+
+

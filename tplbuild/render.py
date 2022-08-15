@@ -274,6 +274,7 @@ def render(
         result[img.name] = stage_data
 
     for line_num, line in line_reader(dockerfile_data):
+        line_num = line_num + 1
         line_parts = line.split(maxsplit=1)
         cmd = line_parts[0].upper()
         line = line_parts[1] if len(line_parts) > 1 else ""
