@@ -13,10 +13,22 @@ def line_reader(document: str) -> Iterable[Tuple[int, str]]:
     the following line concatenated onto itself, not including the backslash or
     line feed character.
     """
+    lines = []
+    line_start_idx = 0
+    line_last_ch = ""
+    for idx, ch in enumerate(document):
+        if ch == "\n":
+            end_idx = idx - 1 if line_last_ch == "\r" else idx
+            lines.append((line_start_idx, document[line_start_idx:end_idx]))
+            line_start_idx = idx + 1
+        elif line_last_ch == "\r":
+            lines.append((line_start_idx, document[line_start_idx : idx - 1]))
+            line_start_idx = idx
+        line_last_ch = ch
+
     idx = -1
     line_parts: List[str] = []
-    lines = document.splitlines()
-    for idx, line_part in enumerate(lines):
+    for idx, (line_pos, line_part) in enumerate(lines):
         line_part = line_part.rstrip()
         if line_part.lstrip().startswith("#"):
             continue
@@ -27,11 +39,11 @@ def line_reader(document: str) -> Iterable[Tuple[int, str]]:
         line = ("".join(line_parts) + line_part).strip()
         line_parts.clear()
         if line:
-            yield idx, line
+            yield line_pos, idx, line
 
     line = "".join(line_parts).strip()
     if line:
-        yield idx, line
+        yield line_pos, idx, line
 
 
 @contextlib.contextmanager
