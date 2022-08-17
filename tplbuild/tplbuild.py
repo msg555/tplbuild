@@ -28,7 +28,7 @@ from .exceptions import (
 )
 from .graph import hash_graph, visit_graph
 from .images import BaseImage, ImageDefinition, SourceImage, StageData
-from .jinja_source_mapper import SourceMapperExtension
+from .jinja_source_mapper import SourceMapper, SourceMapperExtension
 from .output import OutputStreamer
 from .plan import BuildOperation, BuildPlanner
 from .utils import deep_merge_json, ignore_escape, open_and_swap
@@ -136,7 +136,7 @@ class TplBuild:
         *,
         file_template=False,
         file_env=False,
-    ) -> Tuple[str, List[Tuple[int, int]]]:
+    ) -> Tuple[str, SourceMapper]:
         """
         Like jinja_render but also returns a SourceMapper object that can be used to
         map output text to the template line that generated it.
@@ -151,7 +151,7 @@ class TplBuild:
             source_mapper = jinja_env.extensions[
                 "tplbuild.jinja_source_mapper.SourceMapperExtension"
             ]
-            return source_mapper.render(jtpl.generate(params))
+            return source_mapper.render(jtpl.generate(params))  # type: ignore
         except jinja2.TemplateError as exc:
             if file_template:
                 raise TplBuildTemplateException(

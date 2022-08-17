@@ -1,22 +1,25 @@
-from typing import Iterator, Tuple
+from typing import Iterable, Tuple
 
 from jinja2.ext import Extension
 from jinja2.lexer import Token
 
 
-class TokenMetadata:
-    def __init__(self, lineno, token_length):
-        self.lineno = lineno
-        self.token_length = token_length
-
-
 class SourceMapper:
-    def __init__(self, line_breaks: Iterator[Tuple[int, int]]) -> None:
+    """
+    Container class that can be used to map lines of rendered text to the
+    template file and line that generated that text.
+    """
+
+    def __init__(self, line_breaks: Iterable[Tuple[int, int, str]]) -> None:
         self.line_breaks = tuple(line_breaks)
 
-    def get_source_line_data(self, pos: int) -> (str, int):
+    def get_source_line_data(self, pos: int) -> Tuple[str, int]:
+        """
+        Given a character position in the rendered document return the template
+        file and line number that produced it.
+        """
         if not self.line_breaks:
-            return -1
+            return "<none>", -1
 
         idx = 0
         while idx + 1 < len(self.line_breaks) and pos > self.line_breaks[idx][0]:
@@ -26,13 +29,29 @@ class SourceMapper:
             self.line_breaks[idx][1],
         )
 
-    def get_source_line(self, pos: int) -> (str, int):
+    def get_source_line(self, pos: int) -> str:
+        """
+        Like `get_source_line_data` except return a single string in the form
+        {file}:{line_no}.
+        """
         result = self.get_source_line_data(pos)
         return f"{result[0]}:{result[1]}"
 
 
 class SourceMapperExtension(Extension):
+    """
+    Jinja extension used to correlate template files and line numbers to each
+    character of output in the rendered document. It does this by inserting
+    instructions to print metadata within the template and removing these
+    metadata chunks when passing the template output back through the render
+    function.
+    """
+
     def filter_stream(self, stream):
+        """
+        Extension filter function that adds output to track the template file
+        and line numbers in the output stream.
+        """
         yield Token(1, "block_begin", "{%")
         yield Token(1, "name", "print")
         yield Token(1, "string", f"\u00001;{stream.filename}")
@@ -46,7 +65,12 @@ class SourceMapperExtension(Extension):
                 yield Token(1, "block_end", "%}")
             yield token
 
-    def render(self, generator):
+    def render(self, generator) -> Tuple[str, SourceMapper]:
+        """
+        Given a generator created from jinja_env.generate, output the complete
+        rendered document and a SourceMapper object to map each character to a
+        file and line number in the source template.
+        """
         cur_pos = 0
         cur_lineno = 0
         cur_filename = "<none>"
@@ -67,3 +91,6 @@ class SourceMapperExtension(Extension):
                 cur_pos += len(data)
 
         return "".join(result), SourceMapper(line_breaks)
+
+    def parse(self, parser):
+        raise NotImplementedError("No parse method needed")

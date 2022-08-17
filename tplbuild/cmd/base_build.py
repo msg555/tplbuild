@@ -2,6 +2,7 @@ import argparse
 import uuid
 from typing import List
 
+from tplbuild.cmd.common import debug_build_operations
 from tplbuild.cmd.utility import CliUtility
 from tplbuild.exceptions import TplBuildException
 from tplbuild.images import StageData
@@ -50,6 +51,13 @@ class BaseBuildUtility(CliUtility):
             action="store_const",
             help="Only verify that all requested base images are already built",
         )
+        parser.add_argument(
+            "--debug",
+            default=False,
+            const=True,
+            action="store_const",
+            help="Only print rendered Dockerfiles instead of building images",
+        )
 
     async def main(self, args, tplbld: TplBuild) -> int:
         images = set(args.image)
@@ -95,6 +103,9 @@ class BaseBuildUtility(CliUtility):
             return 1
 
         # Execute the build operations.
-        await tplbld.build(build_ops)
+        if args.debug:
+            debug_build_operations(tplbld, build_ops)
+        else:
+            await tplbld.build(build_ops)
 
         return 0

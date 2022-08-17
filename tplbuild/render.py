@@ -312,7 +312,9 @@ def render(
             )
         elif cmd in ("ADD", "COPY"):
             if cmd == "ADD":
-                LOGGER.warning("Treating unsupported 'ADD' command like 'COPY'")
+                LOGGER.warning(
+                    "%s: Treating unsupported 'ADD' command like 'COPY'", line_num
+                )
             if not image_stack:
                 raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
 

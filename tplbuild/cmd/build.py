@@ -1,5 +1,6 @@
 import argparse
 
+from tplbuild.cmd.common import debug_build_operations
 from tplbuild.cmd.utility import CliUtility
 from tplbuild.exceptions import TplBuildException
 from tplbuild.tplbuild import TplBuild
@@ -45,6 +46,13 @@ class BuildUtility(CliUtility):
             type=lambda val: (True, val),
             help="Like --set except the value will be decoded as a JSON payload."
             " e.g. '--set-json a.b=[1,\"xyz\",null]'",
+        )
+        parser.add_argument(
+            "--debug",
+            default=False,
+            const=True,
+            action="store_const",
+            help="Only print rendered Dockerfiles instead of building images",
         )
 
     async def main(self, args, tplbld: TplBuild) -> int:
@@ -95,6 +103,9 @@ class BuildUtility(CliUtility):
         build_ops = tplbld.plan(stages_to_build)
 
         # Execute the build operations.
-        await tplbld.build(build_ops)
+        if args.debug:
+            debug_build_operations(tplbld, build_ops)
+        else:
+            await tplbld.build(build_ops)
 
         return 0

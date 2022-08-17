@@ -43,6 +43,7 @@ async def test_smartcopy():
         set_args=[],
         update_salt=False,
         update_sources=False,
+        debug=False,
     )
     async with setup_build_test("smartcopy") as (base_dir, tplbld):
         result = await BaseBuildUtility().main(
@@ -91,7 +92,7 @@ async def test_smartcopy():
 @pytest.mark.build
 async def test_multifile():
     """Test that the multifile build works as expected."""
-    params = dict(image=[], profile=[], platform=[], set_args=[])
+    params = dict(image=[], profile=[], platform=[], set_args=[], debug=False)
     async with setup_build_test("multifile") as (_, tplbld):
         result = await BuildUtility().main(
             Namespace(**params),
@@ -110,6 +111,7 @@ async def test_tree():
         set_args=[],
         update_salt=False,
         update_sources=False,
+        debug=False,
     )
     async with setup_build_test("tree") as (base_dir, tplbld):
         result = await BaseBuildUtility().main(
