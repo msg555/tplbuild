@@ -3,6 +3,7 @@ import logging
 import os
 import uuid
 from asyncio.subprocess import DEVNULL, PIPE
+from dataclasses import dataclass
 from typing import (
     Any,
     AsyncIterable,
@@ -186,6 +187,27 @@ def _compute_titles(build_ops: List[BuildOperation]) -> List[str]:
     return titles
 
 
+@dataclass(eq=False)
+class RenderedBuildOperation:
+    """
+    Dataclass describing a rendered build operation.
+    """
+
+    #: Dockerfile data to pass to underlying builder.
+    dockerfile: str
+    #: Tags to set locally. If a tag is maps to True it should be pushed.
+    tags: Dict[str, bool]
+    #: Tag to initially build the image as. This may be a transient tag if
+    #: there was no requested tag associated with this build operation.
+    primary_tag: str
+    #: User friendly title for the build operation.
+    build_title: str
+    #: Set to True if the build operation does not actually create a new image.
+    #: This is the case for example when a base image is created solely from
+    #: a source image.
+    build_empty: bool
+
+
 class BuildExecutor:
     """
     Utility class that acts as an interface between tplbuild and the client
@@ -229,39 +251,32 @@ class BuildExecutor:
                 first push tag.
         """
         transient_images: List[str] = []
-        image_tag_map: Dict[ImageDefinition, str] = {}
         build_tasks: Dict[BuildOperation, Awaitable] = {}
-        build_titles = _compute_titles(build_ops)
         remote_pull_coros: Dict[str, Awaitable] = {}
 
-        async def _build_single(build_op: BuildOperation, build_title: str):
+        rendered_ops = self.render_build_ops(build_ops)
+        image_tag_map: Dict[ImageDefinition, str] = {
+            build_op.image: rendered_op.primary_tag
+            for build_op, rendered_op in zip(build_ops, rendered_ops)
+            if not rendered_op.build_empty
+        }
 
-            # Construct mapping of all tags to a bool indicating if the
-            # tag should be pushed. The dict is ordered in the same order
-            # as the stages with the tags from each stage keeping the same
-            # relative order with push tags after tags.
-            tags: Dict[str, bool] = {}
-            for stage in build_op.stages:
-                for tag in stage.config.image_names or []:
-                    tags.setdefault(tag, False)
-                for tag in stage.config.push_names or []:
-                    tags[tag] = True
-
+        async def _build_single(
+            build_op: BuildOperation, rendered_op: RenderedBuildOperation
+        ):
             # Wait for dependencies to finish
             for dep in build_op.dependencies:
                 await build_tasks[dep]
 
+            tags = rendered_op.tags
+            primary_tag = rendered_op.primary_tag
+            build_title = rendered_op.build_title
+
             if isinstance(build_op.image, MultiPlatformImage):
-                primary_tag = ""
                 await self._build_multi_platform(
                     build_op.image, tags, image_tag_map, build_title
                 )
             else:
-                if tags:
-                    primary_tag = next(iter(tags))
-                else:
-                    primary_tag = f"{self.transient_prefix}-{uuid.uuid4()}"
-
                 if isinstance(build_op.image, ContextImage):
                     await self._build_context(primary_tag, build_op.image, build_title)
                 else:
@@ -278,13 +293,15 @@ class BuildExecutor:
                             await remote_pull_coros[remote_ref]
 
                     await self._build_work(
-                        primary_tag, build_op, local_deps, image_tag_map, build_title
+                        primary_tag,
+                        build_op,
+                        rendered_op.dockerfile,
+                        local_deps,
+                        build_title,
                     )
 
                 if not tags:
                     transient_images.append(primary_tag)
-
-                image_tag_map[build_op.image] = primary_tag
 
                 for tag, push in tags.items():
                     if tag != primary_tag:
@@ -299,8 +316,8 @@ class BuildExecutor:
 
         stack = get_exit_stack()
         build_tasks.update(
-            (build_op, stack.create_scoped_task(_build_single(build_op, build_title)))
-            for build_op, build_title in zip(build_ops, build_titles)
+            (build_op, stack.create_scoped_task(_build_single(build_op, rendered_op)))
+            for build_op, rendered_op in zip(build_ops, rendered_ops)
         )
         try:
             for task in build_tasks.values():
@@ -426,44 +443,103 @@ class BuildExecutor:
 
         return remote_deps, local_deps
 
+    def render_build_ops(
+        self,
+        build_ops: List[BuildOperation],
+    ) -> List[RenderedBuildOperation]:
+        """
+        Render Dockerfiles for each build operation.
+        """
+        result: List[RenderedBuildOperation] = []
+        image_tag_map: Dict[ImageDefinition, str] = {}
+
+        for build_op, build_title in zip(build_ops, _compute_titles(build_ops)):
+            # Construct mapping of all tags to a bool indicating if the
+            # tag should be pushed. The dict is ordered in the same order
+            # as the stages with the tags from each stage keeping the same
+            # relative order with push tags after tags.
+            tags: Dict[str, bool] = {}
+            for stage in build_op.stages:
+                for tag in stage.config.image_names or []:
+                    tags.setdefault(tag, False)
+                for tag in stage.config.push_names or []:
+                    tags[tag] = True
+
+            primary_tag = ""
+            if isinstance(build_op.image, MultiPlatformImage):
+                result.append(
+                    RenderedBuildOperation(
+                        "# Multi-arch image", tags, primary_tag, build_title, True
+                    )
+                )
+                continue
+
+            if tags:
+                primary_tag = next(iter(tags))
+            else:
+                primary_tag = f"{self.transient_prefix}-{uuid.uuid4()}"
+
+            if isinstance(build_op.image, ContextImage):
+                result.append(
+                    RenderedBuildOperation(
+                        "# Shared context image", tags, primary_tag, build_title, False
+                    )
+                )
+                image_tag_map[build_op.image] = primary_tag
+                continue
+
+            lines = []
+
+            img = build_op.image
+            while img is not build_op.root:
+                if isinstance(img, CommandImage):
+                    lines.append(f"{img.command} {img.args}")
+                    img = img.parent
+                elif isinstance(img, CopyCommandImage):
+                    if img.context is build_op.inline_context:
+                        lines.append(f"COPY {img.command}")
+                    else:
+                        lines.append(
+                            f"COPY --from={ self._name_image(img.context, image_tag_map) } {img.command}"
+                        )
+                    img = img.parent
+                else:
+                    raise AssertionError("Unexpected image type in build operation")
+
+            build_empty = not lines
+            lines.append(f"FROM { self._name_image(img, image_tag_map) }")
+            if syntax := self.tplbld.config.dockerfile_syntax:
+                lines.append(f"# syntax={syntax}")
+
+            result.append(
+                RenderedBuildOperation(
+                    "\n".join(reversed(lines)),
+                    tags,
+                    primary_tag,
+                    build_title,
+                    build_empty,
+                )
+            )
+            if not build_empty:
+                image_tag_map[build_op.image] = primary_tag
+
+        return result
+
     async def _build_work(
         self,
         tag: str,
         build_op: BuildOperation,
+        dockerfile: str,
         local_deps: Set[str],
-        image_tag_map: Dict[ImageDefinition, str],
         title: str,
     ) -> None:
         """
         Perform a build operation as a series of Dockerfile commands.
         """
-        lines = []
-
-        img = build_op.image
-        while img is not build_op.root:
-            if isinstance(img, CommandImage):
-                lines.append(f"{img.command} {img.args}")
-                img = img.parent
-            elif isinstance(img, CopyCommandImage):
-                if img.context is build_op.inline_context:
-                    lines.append(f"COPY {img.command}")
-                else:
-                    lines.append(
-                        f"COPY --from={ self._name_image(img.context, image_tag_map) } {img.command}"
-                    )
-                img = img.parent
-            else:
-                raise AssertionError("Unexpected image type in build operation")
-
-        lines.append(f"FROM { self._name_image(img, image_tag_map) }")
-        if syntax := self.tplbld.config.dockerfile_syntax:
-            lines.append(f"# syntax={syntax}")
-
-        dockerfile_data = "\n".join(reversed(lines)).encode("utf-8")
         await self.client_build(
             tag,
             build_op.platform,
-            dockerfile_data,
+            dockerfile.encode("utf-8"),
             title,
             context=build_op.inline_context.context
             if build_op.inline_context

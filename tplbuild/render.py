@@ -224,7 +224,7 @@ def render(
     elif result:
         default_context = next(iter(result.values())).image
 
-    dockerfile_data = tplbld.jinja_render(
+    dockerfile_data, dockerfile_source_mapping = tplbld.jinja_render_debug(
         tplbld.config.template_entrypoint,
         dict(
             platform=platform,
@@ -273,8 +273,8 @@ def render(
             )
         result[img.name] = stage_data
 
-    for line_num, line in line_reader(dockerfile_data):
-        line_num = line_num + 1
+    for line_pos, _, line in line_reader(dockerfile_data):
+        line_num = dockerfile_source_mapping.get_source_line(line_pos)
         line_parts = line.split(maxsplit=1)
         cmd = line_parts[0].upper()
         line = line_parts[1] if len(line_parts) > 1 else ""
@@ -312,7 +312,9 @@ def render(
             )
         elif cmd in ("ADD", "COPY"):
             if cmd == "ADD":
-                LOGGER.warning("Treating unsupported 'ADD' command like 'COPY'")
+                LOGGER.warning(
+                    "%s: Treating unsupported 'ADD' command like 'COPY'", line_num
+                )
             if not image_stack:
                 raise TplBuildException(f"{line_num}: Expected image start, not {cmd}")
 
@@ -344,7 +346,9 @@ def render(
                 raise TplBuildException(f"{line_num}: No context on stack to pop")
             image_stack[-1].contexts.pop()
         else:
-            raise TplBuildException(f"Unsupported build command {repr(cmd)}")
+            raise TplBuildException(
+                f"{line_num}: Unsupported build command {repr(cmd)}"
+            )
 
     while image_stack:
         _pop_image_stack()

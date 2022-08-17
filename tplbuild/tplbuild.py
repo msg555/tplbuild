@@ -28,6 +28,7 @@ from .exceptions import (
 )
 from .graph import hash_graph, visit_graph
 from .images import BaseImage, ImageDefinition, SourceImage, StageData
+from .jinja_source_mapper import SourceMapper, SourceMapperExtension
 from .output import OutputStreamer
 from .plan import BuildOperation, BuildPlanner
 from .utils import deep_merge_json, ignore_escape, open_and_swap
@@ -93,11 +94,18 @@ class TplBuild:
         self.custom_client = bool(registry_client)
         self.registry_client = registry_client or AsyncRegistryClient()
         self.executor = BuildExecutor(self)
-        self.jinja_env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+        self.jinja_env = jinja2.Environment(
+            undefined=jinja2.StrictUndefined,
+            extensions=[SourceMapperExtension],
+        )
         self.jinja_file_env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(
-                [os.path.join(base_dir, path) for path in config.template_paths]
+                [
+                    os.path.normpath(os.path.join(base_dir, path))
+                    for path in config.template_paths
+                ]
             ),
+            extensions=[SourceMapperExtension],
             undefined=jinja2.StrictUndefined,
         )
         self.jinja_env.filters["shell_escape"] = shlex.quote
@@ -121,6 +129,36 @@ class TplBuild:
         if not self.custom_client:
             await self.registry_client.__aexit__(exc_type, exc_value, exc_traceback)
 
+    def jinja_render_debug(
+        self,
+        template: str,
+        params: Dict[str, Any],
+        *,
+        file_template=False,
+        file_env=False,
+    ) -> Tuple[str, SourceMapper]:
+        """
+        Like jinja_render but also returns a SourceMapper object that can be used to
+        map output text to the template line that generated it.
+        """
+        jinja_env = self.jinja_file_env if file_env else self.jinja_env
+        try:
+            if file_template:
+                jtpl = jinja_env.get_template(template)
+            else:
+                jtpl = jinja_env.from_string(template)
+
+            source_mapper = jinja_env.extensions[
+                "tplbuild.jinja_source_mapper.SourceMapperExtension"
+            ]
+            return source_mapper.render(jtpl.generate(params))  # type: ignore
+        except jinja2.TemplateError as exc:
+            if file_template:
+                raise TplBuildTemplateException(
+                    f"Failed to render file template {repr(template)}"
+                ) from exc
+            raise TplBuildTemplateException("Failed to render template") from exc
+
     def jinja_render(
         self,
         template: str,
@@ -137,19 +175,9 @@ class TplBuild:
 
         On Failure this will raise a TplBuildTempalteException.
         """
-        jinja_env = self.jinja_file_env if file_env else self.jinja_env
-        try:
-            if file_template:
-                jtpl = jinja_env.get_template(template)
-            else:
-                jtpl = jinja_env.from_string(template)
-            return jtpl.render(**params)
-        except jinja2.TemplateError as exc:
-            if file_template:
-                raise TplBuildTemplateException(
-                    f"Failed to render file template {repr(template)}"
-                ) from exc
-            raise TplBuildTemplateException("Failed to render template") from exc
+        return self.jinja_render_debug(
+            template, params, file_template=file_template, file_env=file_env
+        )[0]
 
     def get_base_image_name(
         self,
