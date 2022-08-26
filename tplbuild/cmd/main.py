@@ -186,7 +186,7 @@ def load_user_config(args) -> UserConfig:
             if args.user_config:
                 raise TplBuildException(
                     f"Failed to read user config file: {exc}"
-                )
+                ) from exc
             continue
         except (ValueError, TypeError, yaml.YAMLError) as exc:
             raise TplBuildException(f"Failed to load user config: {exc}") from exc

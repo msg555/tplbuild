@@ -91,9 +91,7 @@ def _render_context(
                 ignore_data = fign.read()
         except IOError as exc:
             if context_config.ignore_file is not None:
-                raise TplBuildException(
-                    f"Failed to read ignore file: {exc}"
-                ) from exc
+                raise TplBuildException(f"Failed to read ignore file: {exc}") from exc
             ignore_data = ""
 
     try:

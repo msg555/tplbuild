@@ -122,7 +122,9 @@ class TplBuild:
             LOGGER.warning(".tplbuilddata.json not found, using empty bulid data")
             self.build_data = BuildData()
         except (IOError, ValueError, TypeError, yaml.YAMLError) as exc:
-            raise TplBuildException(f"Failed to load .tplbuilddata.json: {exc}") from exc
+            raise TplBuildException(
+                f"Failed to load .tplbuilddata.json: {exc}"
+            ) from exc
 
     async def __aenter__(self) -> "TplBuild":
         return self
