@@ -89,10 +89,10 @@ def _render_context(
                 os.path.join(tplbld.base_dir, ignore_file), encoding="utf-8"
             ) as fign:
                 ignore_data = fign.read()
-        except FileNotFoundError as exc:
+        except IOError as exc:
             if context_config.ignore_file is not None:
                 raise TplBuildException(
-                    f"Missing ignore file {repr(context_config.ignore_file)}"
+                    f"Failed to read ignore file: {exc}"
                 ) from exc
             ignore_data = ""
 

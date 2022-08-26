@@ -70,7 +70,7 @@ class TplBuild:
         except FileNotFoundError:
             LOGGER.warning("No tplbuild.yml found, using default configuration")
             config = TplConfig()
-        except (ValueError, TypeError, yaml.YAMLError) as exc:
+        except (IOError, ValueError, TypeError, yaml.YAMLError) as exc:
             raise TplBuildException(f"Failed to load configuration: {exc}") from exc
         return TplBuild(
             base_dir, config, user_config=user_config, registry_client=registry_client
@@ -121,6 +121,8 @@ class TplBuild:
         except FileNotFoundError:
             LOGGER.warning(".tplbuilddata.json not found, using empty bulid data")
             self.build_data = BuildData()
+        except (IOError, ValueError, TypeError, yaml.YAMLError) as exc:
+            raise TplBuildException(f"Failed to load .tplbuilddata.json: {exc}") from exc
 
     async def __aenter__(self) -> "TplBuild":
         return self
@@ -744,13 +746,16 @@ class TplBuild:
         """
         Save build data to disk.
         """
-        with open_and_swap(
-            os.path.join(self.base_dir, ".tplbuilddata.json"),
-            mode="w",
-            encoding="utf-8",
-        ) as fdata:
-            json.dump(
-                self.build_data.dict(),
-                fdata,
-                indent=2,
-            )
+        try:
+            with open_and_swap(
+                os.path.join(self.base_dir, ".tplbuilddata.json"),
+                mode="w",
+                encoding="utf-8",
+            ) as fdata:
+                json.dump(
+                    self.build_data.dict(),
+                    fdata,
+                    indent=2,
+                )
+        except IOError as exc:
+            raise TplBuildException(f"Failed to save build data: {exc}") from exc

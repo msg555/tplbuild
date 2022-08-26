@@ -89,6 +89,12 @@ def create_config_parser() -> ArgumentParser:
     """
     parser = ArgumentParser(description="Use config options", add_help=False)
     parser.add_argument(
+        "--user-config",
+        required=False,
+        default=SUPPRESS,
+        help="Path to user config file",
+    )
+    parser.add_argument(
         "--auth-file",
         required=False,
         default=SUPPRESS,
@@ -169,12 +175,18 @@ def load_user_config(args) -> UserConfig:
         os.path.expanduser("~/.tplbuildconfig.yml"),
         os.path.join(args.base_dir, ".tplbuildconfig.yml"),
     }
+    if args.user_config:
+        user_config_locations = {args.user_config}
     user_config_data: Dict = {}
     for user_config_path in user_config_locations:
         try:
             with open(user_config_path, encoding="utf-8") as fconfig:
                 user_config_data.update(**yaml.safe_load(fconfig))
-        except FileNotFoundError:
+        except IOError as exc:
+            if args.user_config:
+                raise TplBuildException(
+                    f"Failed to read user config file: {exc}"
+                )
             continue
         except (ValueError, TypeError, yaml.YAMLError) as exc:
             raise TplBuildException(f"Failed to load user config: {exc}") from exc
@@ -243,6 +255,7 @@ def apply_default_args(args) -> None:
     defaults = dict(
         verbose=0,
         base_dir=".",
+        user_config=None,
         auth_file=None,
         insecure=False,
         cafile=None,
