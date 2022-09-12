@@ -251,7 +251,6 @@ class BuildExecutor:
                 first push tag.
         """
         transient_images: List[str] = []
-        build_tasks: Dict[BuildOperation, Awaitable] = {}
         remote_pull_coros: Dict[str, Awaitable] = {}
 
         rendered_ops = self.render_build_ops(build_ops)
@@ -266,7 +265,7 @@ class BuildExecutor:
         ):
             # Wait for dependencies to finish
             for dep in build_op.dependencies:
-                await build_tasks[dep]
+                await build_done_events[dep].wait()
 
             tags = rendered_op.tags
             primary_tag = rendered_op.primary_tag
@@ -276,6 +275,7 @@ class BuildExecutor:
                 await self._build_multi_platform(
                     build_op.image, tags, image_tag_map, build_title
                 )
+                build_done_events[build_op].set()
             else:
                 if isinstance(build_op.image, ContextImage):
                     await self._build_context(primary_tag, build_op.image, build_title)
@@ -299,6 +299,7 @@ class BuildExecutor:
                         local_deps,
                         build_title,
                     )
+                build_done_events[build_op].set()
 
                 if not tags:
                     transient_images.append(primary_tag)
@@ -307,24 +308,29 @@ class BuildExecutor:
                     if tag != primary_tag:
                         await self.tag_image(primary_tag, tag)
                     if push:
-                        # TODO: Local build dependants should be able to
-                        #       progress while we're pushing.
                         await self.push_image(tag, build_title)
 
             if complete_callback:
                 await complete_callback(build_op, primary_tag)
 
         stack = get_exit_stack()
-        build_tasks.update(
-            (build_op, stack.create_scoped_task(_build_single(build_op, rendered_op)))
+        build_tasks = {
+            build_op: stack.create_scoped_task(_build_single(build_op, rendered_op))
             for build_op, rendered_op in zip(build_ops, rendered_ops)
-        )
+        }
+        build_done_events = {build_op: asyncio.Event() for build_op in build_ops}
         try:
-            for task in build_tasks.values():
+            done, _ = await asyncio.wait(
+                build_tasks.values(),
+                return_when=asyncio.FIRST_EXCEPTION,
+            )
+            # Propagate any exceptions that occurred
+            for task in done:
                 await task
         finally:
-            for image in transient_images:
-                stack.create_scoped_task(self.untag_image(image))
+            await asyncio.gather(
+                *(self.untag_image(image) for image in transient_images)
+            )
 
     async def _build_multi_platform(
         self,
