@@ -14,6 +14,12 @@ the creation of `tplbuild` were
 syntax but it's recommended to use a builder among the list of officially
 :ref:`supported builders <Builders>`.
 
+.. raw:: html
+
+    <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; height: auto;">
+        <iframe src="https://www.youtube.com/embed/HDiyABr8Adw" frameborder="0" allowfullscreen style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe>
+    </div>
+
 Installation
 ------------
 
