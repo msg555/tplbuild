@@ -33,6 +33,14 @@ class SourceUpdateUtility(CliUtility):
             help="Platforms to build, may be specified multiple times. Defaults to all platforms",
         )
         parser.add_argument(
+            "--check",
+            required=False,
+            const=True,
+            default=False,
+            action="store_const",
+            help="Only verify that all source images are up to date",
+        )
+        parser.add_argument(
             "--clear",
             required=False,
             const=True,
@@ -80,6 +88,7 @@ class SourceUpdateUtility(CliUtility):
         if not source_images:
             source_images = all_source_images
 
+        updates_found = False
         for repo, tag, platform in source_images:
             image = SourceImage(repo=repo, tag=tag, platform=platform)
             try:
@@ -101,9 +110,15 @@ class SourceUpdateUtility(CliUtility):
             if new_digest == prev_digest:
                 print(f"No update for {repo}:{tag} on {platform}")
             else:
-                print(f"Updated {repo}:{tag} on {platform}")
+                updates_found = True
+                if args.check:
+                    print(f"Found update for {repo}:{tag} on {platform}")
+                else:
+                    print(f"Updated {repo}:{tag} on {platform}")
                 print(f"  {prev_digest} -> {new_digest[:32]}")
 
-        tplbld.save_build_data()
+        if args.check:
+            return 1 if updates_found else 0
 
+        tplbld.save_build_data()
         return 0
