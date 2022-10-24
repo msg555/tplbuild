@@ -22,6 +22,7 @@ from tplbuild.cmd.publish import PublishUtility
 from tplbuild.cmd.source_lookup import SourceLookupUtility
 from tplbuild.cmd.source_update import SourceUpdateUtility
 from tplbuild.cmd.utility import CliUtility
+from tplbuild.cmd.version import VersionUtility
 from tplbuild.config import UserConfig
 from tplbuild.exceptions import TplBuildException
 from tplbuild.tplbuild import TplBuild
@@ -36,6 +37,7 @@ ALL_UTILITIES: Mapping[str, Callable[[], CliUtility]] = {
     "publish": PublishUtility,
     "source-lookup": SourceLookupUtility,
     "source-update": SourceUpdateUtility,
+    "version": VersionUtility,
 }
 
 
