@@ -427,6 +427,8 @@ class BuildData(BaseModel):
     sources.
     """
 
+    #: Must be "1.0"
+    version: Literal["1.0"] = "1.0"
     #: Mapping of repo -> tag -> platform -> source image manifest digest.
     source: Dict[str, Dict[str, Dict[str, str]]] = {}
     #: Mapping of profile -> stage_name -> platform -> cached base image

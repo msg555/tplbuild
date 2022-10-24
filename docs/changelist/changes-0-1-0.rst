@@ -5,3 +5,4 @@
 - Fix issue where transient images may not be untagged
 - Added --check flag to source-update sub-command
 - Added version sub-command
+- Added "version" field to build data internal file
