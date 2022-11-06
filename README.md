@@ -25,6 +25,11 @@ pip install tplbuild
 Documentation for *tplbuild* can be found
 [here](https://tplbuild.readthedocs.io/)
 
+### Examples
+
+Check out the [examples](examples/) folder in this repo for some example of
+what can be done with `tplbuild`.
+
 ### Demo Video
 
 Additionally, you can find a quick tutorial highlighting key features

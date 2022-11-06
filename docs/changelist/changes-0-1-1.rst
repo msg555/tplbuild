@@ -2,3 +2,4 @@
 =====
 
 - Fix issue where rendering in macros was mostly dropped
+- Added examples section
