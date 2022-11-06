@@ -1,0 +1,23 @@
+{% macro fibonacci(n) %}
+FROM alpine AS anon-fib-{{ n }}
+
+# Render lower cases as needed
+{% if n > 0 -%}
+{{ fibonacci(n - 1) }}
+{% endif -%}
+
+# Calculate fibonacci numbers using previous images
+{% if n <= 1 -%}
+RUN echo {{ n }} > /result.txt
+{% else -%}
+COPY --from=anon-fib-{{ n - 2 }} /result.txt /result.n-2.txt
+COPY --from=anon-fib-{{ n - 1 }} /result.txt /result.n-1.txt
+RUN echo $(( $(cat /result.n-2.txt) + $(cat /result.n-1.txt) )) > /result.txt
+{% endif -%}
+
+# END is a tplbuild specific command that closes the active image on the top of
+# the image stack. This allows our template to not interrupt any image already
+# in progress at our caller.
+END
+
+{% endmacro %}

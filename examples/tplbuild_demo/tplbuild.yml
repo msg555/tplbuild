@@ -1,0 +1,16 @@
+version: "1.0"
+
+base_image_repo: msg555/base-images
+
+platforms:
+- linux/amd64
+- linux/arm64
+
+stage_push_name: 'msg555/tplbuild-demo-{{ stage_name }}'
+
+default_profile: dev
+profiles:
+  dev:
+    install_dev_packages: true
+  release:
+    install_dev_packages: false

@@ -1,0 +1,37 @@
+{
+  "source": {
+    "library/python": {
+      "3.10": {
+        "linux/amd64": "sha256:eef39ed128b235c95c723eabe2de05670ba87f3273cc784effe4c3d9d0847c09",
+        "linux/arm64": "sha256:61e90b1cd885213a87d5ac6497f1977fbb0a325176613c7b80f9b63bcb6ad040"
+      }
+    }
+  },
+  "base": {
+    "release": {
+      "base-my-app": {
+        "linux/amd64": {
+          "build_hash": "23e3a91b253a6527e78b5f4350c06b120921be314ca0e1f35fe3f74e840747aa",
+          "image_digest": "sha256:5f603b18823103732a3cbd257217bd22f2ab8d7b9bf9bb7bd829c4275bd89f06"
+        },
+        "linux/arm64": {
+          "build_hash": "5dd416fcf83e0d6ff73fca8a8a77b5fe1d5b73a399cc9e7a1bf594334e5d2711",
+          "image_digest": "sha256:2fdf8107a21eae8a6626efb9519ae4813a79167d73c21b38dbdc39dec7f938e3"
+        }
+      }
+    },
+    "dev": {
+      "base-my-app": {
+        "linux/amd64": {
+          "build_hash": "5680dda7c18618baa31c97f89e2e32c39782d19f62d1fbcce48165dd8c7bc027",
+          "image_digest": "sha256:d61fe90b7a9428a6659328b8ab94e3e296d4a0b61ef6105f55536cee2b3f850e"
+        },
+        "linux/arm64": {
+          "build_hash": "36d7fe1c4e8601b97ad999393b49752a2db0690f4bdf468d193c893d7cb6bd59",
+          "image_digest": "sha256:5953dc56be6deb7c8a3d767d3ba182959cc135807711d41c774dd3a1ca591a36"
+        }
+      }
+    }
+  },
+  "hash_salt": "9cd68f50-2b6d-4822-b82d-d1b6aeb3b7f0"
+}

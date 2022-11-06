@@ -1,0 +1,20 @@
+
+version: "3"
+
+services:
+  my-app:
+    restart: always
+    image: my-app
+    environment:
+      DB_URL: "mysql://testuser:testpwd@mysql-server/my-app"
+      PYTHONUNBUFFERED: '1'
+    ports:
+      - 8080:8080
+
+  mysql-server:
+    image: mysql:5
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: 'yes'
+      MYSQL_DATABASE: my-app
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpwd

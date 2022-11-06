@@ -54,14 +54,16 @@ class SourceMapperExtension(Extension):
         """
         yield Token(1, "block_begin", "{%")
         yield Token(1, "name", "print")
-        yield Token(1, "string", f"\u00001;{stream.filename}")
+        yield Token(1, "string", f"\u00001;{stream.filename}\u0000")
         yield Token(1, "block_end", "%}")
 
         for token in stream:
             if token.type == "data":
                 yield Token(1, "block_begin", "{%")
                 yield Token(1, "name", "print")
-                yield Token(1, "string", f"\u0000{token.lineno};{stream.filename}")
+                yield Token(
+                    1, "string", f"\u0000{token.lineno};{stream.filename}\u0000"
+                )
                 yield Token(1, "block_end", "%}")
             yield token
 
@@ -76,10 +78,12 @@ class SourceMapperExtension(Extension):
         cur_filename = "<none>"
         line_breaks = []
         result = []
-        for data in generator:
-            if data.startswith("\u0000"):
+
+        chunks = "".join(generator).split("\u0000")
+        for ind, data in enumerate(chunks):
+            if ind % 2 == 1:
                 s1 = data.find(";")
-                cur_lineno = int(data[1:s1])
+                cur_lineno = int(data[:s1])
                 cur_filename = data[s1 + 1 :]
                 line_breaks.append((cur_pos, cur_lineno, cur_filename))
             else:
