@@ -134,12 +134,14 @@ def create_config_parser() -> ArgumentParser:
         "--build-jobs",
         required=False,
         default=SUPPRESS,
+        type=int,
         help="Set max concurrent build jobs",
     )
     parser.add_argument(
         "--push-jobs",
         required=False,
         default=SUPPRESS,
+        type=int,
         help="Set max concurrent push or pull jobs",
     )
     return parser
@@ -213,7 +215,7 @@ def load_user_config(args) -> UserConfig:
         else:
             user_config.build_jobs = args.build_jobs
     if args.push_jobs is not None:
-        if args.build_jobs <= 0:
+        if args.push_jobs <= 0:
             user_config.push_jobs = os.cpu_count() or 4
         else:
             user_config.push_jobs = args.push_jobs

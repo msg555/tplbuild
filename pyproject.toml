@@ -35,6 +35,9 @@ disable = [
     "format",
     "missing-module-docstring",
     "fixme",
+
+    "deprecated-typing-alias",
+    "consider-alternative-union-syntax",
 ]
 
 [tool.pylint.MASTER]

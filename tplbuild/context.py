@@ -290,7 +290,7 @@ class BuildContext:
         self,
         *,
         extra_files: Optional[Dict[str, Tuple[int, bytes]]] = None,
-        ignore_func: Callable[[str], bool] = None,
+        ignore_func: Optional[Callable[[str], bool]] = None,
     ) -> Iterable[tarfile.TarInfo]:
         """
         Generator that yields TarInfo objects for each not-ignored object
