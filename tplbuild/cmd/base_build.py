@@ -96,9 +96,10 @@ class BaseBuildUtility(CliUtility):
 
         # Create a plan of build operations to execute the requested build.
         build_ops = tplbld.plan(stages_to_build)
+        if not build_ops:
+            print("Base images up to date!")
+            return 0
         if args.check:
-            if not build_ops:
-                return 0
             print(f"Needed {len(build_ops)} build operations")
             return 1
 

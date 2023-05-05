@@ -3,22 +3,26 @@
   "source": {
     "docker.io/library/docker": {
       "dind": {
-        "linux/arm64": "sha256:655cb1fb74cd1dae63aac918a31a262f9d2014361b028881b5c342161c56cd44",
-        "linux/amd64": "sha256:94055dff30fb2a2e02044d07603a9624615de3f432f3ae89f03fd4105b28fce2"
+        "linux/arm64": "sha256:5d4a03f0058a8925868f316321a8a8673fa28c93b4f92e6f5b65f6f673402d3d",
+        "linux/amd64": "sha256:280555387880b1fd76b45251d76122ea01ec00f4920373c46833564a0a7b24da"
       }
     },
     "docker.io/library/python": {
       "3.10": {
-        "linux/arm64": "sha256:f8c0f5834d843d2f3d718c99ae6ee614c8f63645d9940b1e9b0dff56221d3481",
-        "linux/amd64": "sha256:e9ebb760d74df0c28447c2f67050800c3392a3987ed77ce493545c7d3ad24c9d"
+        "linux/arm64": "sha256:021d6af29621b7c7243df5478549a56c9f8e746e798f812e9757e426334478b3",
+        "linux/amd64": "sha256:b48e216f7c4adcf24fecd7016f3b8ead76866a19571819f67f47c1ccaf899717"
       },
       "3.8": {
-        "linux/arm64": "sha256:8c2caf12624d58087f3f90f130ca8d129792d99c6692a60eb60fa16f53414fd2",
-        "linux/amd64": "sha256:18b81d40d12b6461ef056514bc77e4ef58156a46c6999df0127243128019c19c"
+        "linux/arm64": "sha256:5da604cc6502beb85523baca677bf58fffe3f72e21c68ab5b4ac2201d3720be3",
+        "linux/amd64": "sha256:a0105a95395b59edd19e712789e380ed101d341f51d436d4727c72eb18cc484b"
       },
       "3.9": {
-        "linux/arm64": "sha256:da05f2b86d4edd42ad013920a9e173824c653da8b1cdd16ecab2a8671ee1e9d2",
-        "linux/amd64": "sha256:567f012b3d1255468c4003aa80d90d523267ff766a38f070e19923379276147e"
+        "linux/arm64": "sha256:f0b2855cc2c528e9cd1cff924dd676c90b9294b799804adad2813b8b6dea6f70",
+        "linux/amd64": "sha256:c65dadac8789fed40962578392e99a0528dcb868442c75d144e68ba858984837"
+      },
+      "3.11": {
+        "linux/amd64": "sha256:181e49146bfdc8643ebe0f66cd06f27f42df40a0921438e96770dab09797effb",
+        "linux/arm64": "sha256:7e60e576865e42cd602c380e25dbbd0e3fe41a77033085c36653f582e1c6501a"
       }
     }
   },
@@ -26,51 +30,63 @@
     "dev": {
       "base-tplbuild": {
         "linux/amd64": {
-          "build_hash": "d89cddce82e90e29c529f2ab52ef6abb94e9559a1a3922413790f2fe114c82c7",
-          "image_digest": "sha256:77bd3a3aa75900342aee98ef11a60096091124b8049ef9a7317a7301a9f08fb7"
+          "build_hash": "25905ab34008b52b2c9a8b1a1583b89c42f0e75957b23121d532c921e8a30b95",
+          "image_digest": "sha256:12037816fb4dd4d04e3a5627d68955572d3f98595d718c95b5d026dd597c7df3"
         },
         "linux/arm64": {
-          "build_hash": "b98082c519f69bc7ca5fc20b9a34b94b11f1e86d20e23674ae7b596b2eed53ce",
-          "image_digest": "sha256:ae9c9954747275c77a8fa98b1f0a7757b7f1fcd2cd6f605878955ee116359318"
+          "build_hash": "b68fa9cd1684ff7198df8f960311ea86d949156dde0ad4bcfd0cda18ad9952f2",
+          "image_digest": "sha256:817ea43f8d18ce165c504e23873278da4e16fed8a4efb67f7cdacdd447ecc581"
         }
       }
     },
     "dev_3_9": {
       "base-tplbuild": {
         "linux/amd64": {
-          "build_hash": "a38d2dbabe45a5c2af477f0e654363868374e98ceb4eab9d6b6ba6377c333917",
-          "image_digest": "sha256:517d0b39121437dff50eff185898c57b5d1b093a8ec0761cf1e9dce7264a896e"
+          "build_hash": "9c8507284cfd63cc3d3e7c202b02046f15a54b87501ab0b896444312fd8a64b7",
+          "image_digest": "sha256:f450ce9a02ca40dbb37c9affd3d1945002f175461a94586117a3058096d7dc81"
         },
         "linux/arm64": {
-          "build_hash": "68e99518dec6d14c50d3c00be2de196f8d6dd3a454f9d83cf5749baaea50ed6b",
-          "image_digest": "sha256:1c113836cdc4bffb5d5c829883b219f4cbf15eb0dc12a750bcc4695f9764e5b1"
+          "build_hash": "ce37554f3b90985c0434fc2d535f58e00fa9f9707e02b0938921dcac12a09662",
+          "image_digest": "sha256:57b78dc653ef1970a82b241fc355b941885c1dc88f2ee2aaa7d29d935364810b"
         }
       }
     },
     "dev_3_10": {
       "base-tplbuild": {
         "linux/amd64": {
-          "build_hash": "8a366abd2c23f90716da462646ce90a59c5306c99f366f70c22efd90b84d8e72",
-          "image_digest": "sha256:aa40a4ed4d357be185a4004fb1448a015c66e2c04f8bb66568ba9b4a36a3ce28"
+          "build_hash": "c68422f623fe9ad90c9dd3f30529bc608bcb260f619749088d66d6f4189f87e9",
+          "image_digest": "sha256:1c8545b531768388b1c630945ba3de442c14f94eb60f44af63c8a464f359ba35"
         },
         "linux/arm64": {
-          "build_hash": "50706af782dcf997a86374a4ebbb619b15f11e60b588d57c592327f78fcfedbd",
-          "image_digest": "sha256:f4e91887df99916f791ca29e77fd4cc3cd71070e22b92ee6171c2d45301c6cbb"
+          "build_hash": "c3d31212fc7729eb82ad6f9ac86b78799420ac1aaae57841ad0b776ac2d77e2f",
+          "image_digest": "sha256:48098ef2ba145849dd2d493206029f976e7181714b40c7c78d89a635a58f4d61"
         }
       }
     },
     "release": {
       "base-tplbuild": {
         "linux/arm64": {
-          "build_hash": "b87b1e906dcdabd5f15b5b36e4b4279480bd938abf38a97adab1a31e53bd730f",
-          "image_digest": "sha256:8fba7f670feefb4f70e4ace8330f176d77e44e32f42f4a951a0913b9e0e4cee8"
+          "build_hash": "250abc76bd68f9bea572035a561265e9c5d8710f05acfe5d4b371c0a29a87b3f",
+          "image_digest": "sha256:5fedc288ec6560212ed2cafed15ada3b5c5798c84dfde2891f36698591fe0def"
         },
         "linux/amd64": {
-          "build_hash": "8c24d938de35d412f998a528ccfbb2f2168621779b1639d404fae3a192706c24",
-          "image_digest": "sha256:cb07580b48bbdd6445ed3c7eb7d1db4fea6c540af48e356b38d893ee6e716a5b"
+          "build_hash": "593499018bd17df73deb9aa81522c5c2f8e6d32a2a48448fd582f130665da2d3",
+          "image_digest": "sha256:76679db0d12a6d7e6d1c1f3cb25de0a456709ac873258b925cee0eb4b66d26cc"
+        }
+      }
+    },
+    "dev_3_11": {
+      "base-tplbuild": {
+        "linux/amd64": {
+          "build_hash": "816e61ae9a83638740e2f073169daf55733864f45f228b0e34e2081c4a59efa0",
+          "image_digest": "sha256:0994b97eed327150d9b5b1a316edd8b8edfb657bf74186b6217bc7873f9b5b89"
+        },
+        "linux/arm64": {
+          "build_hash": "f806018f5d274949405faa90d5bf11d5e7c907d4ea1ba3dbbf2359464036bfc4",
+          "image_digest": "sha256:1f7c21ab23f37184799df85b8bd357c9e0ec9dd8a15ccb3fadbdbd2440ab06fe"
         }
       }
     }
   },
-  "hash_salt": "11a7a2d1-3a78-4683-b77a-f99cdf03aa74"
+  "hash_salt": "6ee99e28-7bb6-4765-aecc-122b512288c6"
 }
