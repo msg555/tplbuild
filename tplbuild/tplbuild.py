@@ -490,6 +490,7 @@ class TplBuild:
                 raise TplBuildException(
                     f"Failed to lookup source image {repr(str(manifest_ref))}"
                 )
+            # pylint: disable=redefined-variable-type
             manifest_ref = manifest_ref.copy(update=dict(ref=descriptor.digest))
         except RegistryException as exc:
             raise TplBuildException(

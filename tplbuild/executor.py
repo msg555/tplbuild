@@ -390,7 +390,7 @@ class BuildExecutor:
             manifest = ManifestListV2S2(
                 schemaVersion=2,
                 mediaType="application/vnd.docker.distribution.manifest.list.v2+json",
-                manifests=sub_manifest_items,
+                manifests=sub_manifest_items,  # type: ignore
             )
             await self.tplbld.registry_client.manifest_write(image_ref, manifest)
             async with self.tplbld.output_streamer.start_stream(title) as output_stream:

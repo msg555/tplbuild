@@ -32,6 +32,9 @@ profiles:
   dev_3_11:
     env: dev
     python_version: '3.11'
+  dev_3_12:
+    env: dev
+    python_version: '3.12'
   release:
     env: release
     python_version: '3.8'

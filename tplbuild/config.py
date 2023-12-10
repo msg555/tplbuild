@@ -332,7 +332,7 @@ class TplConfig(BaseModel):
     #: builders that understand the "syntax" directive. For some build clients
     #: specifiying a syntax may be required (e.g. the buildx client requires
     #: docker/dockerfile:1.4 or later).
-    dockerfile_syntax: pydantic.constr(regex=r"^[^\s]*$") = ""  # type: ignore
+    dockerfile_syntax: str = pydantic.Field(default="", pattern=r"^[^\s]*$")
     #: List of platforms to build images for. This defaults to linux/amd64
     #:     but should be explicitly configured. Base images will be built
     #:     for each platform listed here allowing for top-level images to
