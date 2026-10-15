@@ -547,9 +547,9 @@ class BuildExecutor:
             build_op.platform,
             dockerfile.encode("utf-8"),
             title,
-            context=build_op.inline_context.context
-            if build_op.inline_context
-            else None,
+            context=(
+                build_op.inline_context.context if build_op.inline_context else None
+            ),
             dependencies=local_deps,
         )
 

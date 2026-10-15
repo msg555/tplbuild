@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        profile: [dev, dev_3_9, dev_3_10, dev_3_11, dev_3_12]
+        profile: [dev, dev_3_11, dev_3_12, dev_3_13, dev_3_14, dev_3_15]
     steps:
     - uses: actions/checkout@v2
     - name: Test ${{ matrix.profile }}

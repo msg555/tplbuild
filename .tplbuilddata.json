@@ -27,6 +27,18 @@
       "3.12": {
         "linux/amd64": "sha256:c50322f5f9b2a3b7ac68dc3cf03e5b29d7f51faa58b8321d975f028eb0c00a73",
         "linux/arm64": "sha256:988ea4571fd487040a1da82cb35e043de818440a311ddc90f2b9f8dbac54895c"
+      },
+      "3.15": {
+        "linux/arm64": "sha256:0a5914e1d66c99eba0b90ccb281dc00e717d3a1c6b3643b0f5687f6dfe71562b",
+        "linux/amd64": "sha256:71eaf9113355d104ebcd81e7113ca21b09f65e96bc200906414e403427b258bb"
+      },
+      "3.13": {
+        "linux/amd64": "sha256:25e2514972115ba1714069a3facf805a8ec789bf9f896c959465dc8df6501651",
+        "linux/arm64": "sha256:007218879ac48068d360f38ce2d325663cab55fad77d72df79a44d6372c62fc3"
+      },
+      "3.14": {
+        "linux/amd64": "sha256:c23ebccb22bca6335521be462d1d4a3449a623c5ca8ce513d163c79c636dae79",
+        "linux/arm64": "sha256:68559f0455341ed19dead6d6f299597d1ed77d71afaf1eea9dd7f9eacb449c4e"
       }
     }
   },
@@ -34,12 +46,12 @@
     "dev": {
       "base-tplbuild": {
         "linux/amd64": {
-          "build_hash": "1df7ff5faf7134f475132cba5faa3dad838acda0fac3c9e1a595d8042ee7c866",
-          "image_digest": "sha256:21cc0dbef70ba3be19e2485d11acfe9df45aade2cd46358f204a9b281944ffae"
+          "build_hash": "da6a6de210898d576e0cd112d4fbfe45d0e6d8743f45d9d22cfad45055ec871c",
+          "image_digest": "sha256:50e844224bcd6f325ba5ddb52b947170438f23e9f576563d4ad6d8a73accbc0e"
         },
         "linux/arm64": {
-          "build_hash": "ed61048d1f6b56098a5906d67c68236a3c1e202f63cbd01e023491c65a6b3ebb",
-          "image_digest": "sha256:9b0e9fc8ce8916226983233304c73d6058b56424fc751bf33a744c1ad79f75f8"
+          "build_hash": "d7414adf64ccf553f3eb7d66d52268e328ad8b5f23dcd4a84c50e9b91f01e83a",
+          "image_digest": "sha256:624b1048829bbff9eaac8fc9190c3fc683109d58acda354bc5b28b7b0cf38357"
         }
       }
     },
@@ -70,36 +82,72 @@
     "release": {
       "base-tplbuild": {
         "linux/arm64": {
-          "build_hash": "9a8e582168b9d3c22383bc5c509ba3d26a50684da769162c6d2a96395688fad0",
-          "image_digest": "sha256:2c534856deb2cc67f18b1359de98a4208670ca9a8eb1fbec9c9395861dc1631e"
+          "build_hash": "0bda47e97114957df5aa16a6e3fa65b8d0ce04d4a286ac2bb5af465d9f13309f",
+          "image_digest": "sha256:486051bd4a39785005619e3c6d0d47e41452d1a10e93b8668e54f726e743050a"
         },
         "linux/amd64": {
-          "build_hash": "607bf1c21acc339f4c46c978b7cce74d26e783cb67a20430b5b657a0e7f0301f",
-          "image_digest": "sha256:4d25d0013c9a26426ae1ab23511435863e4c65290b37bb9b3ff2cd173f814b9a"
+          "build_hash": "166505d328b4f2606ae8bef0d9a8fdfd787b4db38eb0af8471ce816f23810f38",
+          "image_digest": "sha256:33dc16200b90015dca8beb0caf1fadca4a80d0f2f31b3065491ca5510f3e963d"
         }
       }
     },
     "dev_3_11": {
       "base-tplbuild": {
         "linux/amd64": {
-          "build_hash": "65d55ef67236974a958c3c66acd0cd2bbcff690929e5be3333e51d5af9ed2bf9",
-          "image_digest": "sha256:3e01c116d7ad585c827efdfeed649e3c5f82c48473bd8578dda830eb265b7e1b"
+          "build_hash": "4173e4538ce998756019cf45bfd1a35285cfbaa02b2c6e755f43110031fca148",
+          "image_digest": "sha256:f8341470a700f2cc059b19c30fe1dedab9b9348234107a4b7dbdc90156f3ca86"
         },
         "linux/arm64": {
-          "build_hash": "20d90a809e4ca06392b519e4241a840bf7fcfe893740f9ff2710f91204116f2b",
-          "image_digest": "sha256:d4de4bdacf3a2580ff4262bbc203a57fe35121c3faebaaacce7baaefca87eb7b"
+          "build_hash": "04c1424c0475b23b439c751c3eb8e453f17140589d70f86461f209f57c2df2b0",
+          "image_digest": "sha256:55d5ff196641be8177d27e594f6674d964616de69dfba492c7842a461ddb55f4"
         }
       }
     },
     "dev_3_12": {
       "base-tplbuild": {
         "linux/amd64": {
-          "build_hash": "c95927e4cb2669a22fa81724a4aa7b2c5b54f2b8e0724100de9150369993a607",
-          "image_digest": "sha256:dade8c16b4b166373fe4cbf1a87a698b319e7d2acbc7c9d74e11eab2fcfee376"
+          "build_hash": "da6a6de210898d576e0cd112d4fbfe45d0e6d8743f45d9d22cfad45055ec871c",
+          "image_digest": "sha256:50e844224bcd6f325ba5ddb52b947170438f23e9f576563d4ad6d8a73accbc0e"
         },
         "linux/arm64": {
-          "build_hash": "f51d9fdc922ad5ba2f0ce9abe392b57c4705396ab718a0bd9db4cfc6785d999d",
-          "image_digest": "sha256:196eaaef5b9d71f80644d1c4e0379d3576b568c22bb9850648629ca861cd4121"
+          "build_hash": "d7414adf64ccf553f3eb7d66d52268e328ad8b5f23dcd4a84c50e9b91f01e83a",
+          "image_digest": "sha256:624b1048829bbff9eaac8fc9190c3fc683109d58acda354bc5b28b7b0cf38357"
+        }
+      }
+    },
+    "dev_3_13": {
+      "base-tplbuild": {
+        "linux/amd64": {
+          "build_hash": "318ba7a4a0b2da7f3a1ce614c614e46883a4b21cce5754dfeb6bea4d320e2f25",
+          "image_digest": "sha256:5b306a2fc2b1096083e41ad2c360d91b89e9b9469b1e777b03d8d2af6c890ac3"
+        },
+        "linux/arm64": {
+          "build_hash": "f1aaefc802993430409f581d838e9ff3d6a7b48a0c12c69412728c819311b74f",
+          "image_digest": "sha256:20302739586705105c90b83bee57b78d93edc5390de5df7ab75ac5f7eeb71b84"
+        }
+      }
+    },
+    "dev_3_14": {
+      "base-tplbuild": {
+        "linux/amd64": {
+          "build_hash": "e079c03809a742c29aa6c977f0d658f8f242e75029d0d864f7ae77add08f9282",
+          "image_digest": "sha256:31a6f07d79e429b45a47d2bb8e46d0ead556de97957f45db01cd6252bb94305d"
+        },
+        "linux/arm64": {
+          "build_hash": "5c77338737d6efc3002d6421a43d918f95f3829ec6bf3b8216e4ef0e6eb06007",
+          "image_digest": "sha256:e4dcb427f6eea040fd0fc67925f50cbc01114ab7ca4c99317a6e80964907e21a"
+        }
+      }
+    },
+    "dev_3_15": {
+      "base-tplbuild": {
+        "linux/amd64": {
+          "build_hash": "200178160c97dbd2d40a084a9555fce3edfd540618790541c0e92f8c1e398454",
+          "image_digest": "sha256:2ec638c5dd65c84ce77b799a6b6e01941e40ccee0e74ca6a452176791eeca174"
+        },
+        "linux/arm64": {
+          "build_hash": "dae3ed80b8db5ef189ac2af95d932eb0122c43e167f8e549906b1fdc5642e69a",
+          "image_digest": "sha256:f028ec64d848f6688157f7164ee29ee461f3e5062888a538db06b894bde51b35"
         }
       }
     }

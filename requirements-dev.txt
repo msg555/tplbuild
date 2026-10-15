@@ -1,10 +1,10 @@
-black ~= 23.11.0
+black ~= 26.10.1
 build ~= 1.0
-isort ~= 5.13.0
-mypy ~= 1.7.1
-pylint ~= 3.0.2
-pylint-pydantic ~= 0.3.1
-pytest ~= 7.4
-pytest-cov ~= 4.1
-pytest-asyncio ~= 0.23.2
+isort ~= 9.0.2
+mypy ~= 2.4
+pylint ~= 4.1
+pylint-pydantic ~= 0.4.1
+pytest ~= 9.1
+pytest-cov ~= 7.1
+pytest-asyncio ~= 1.4
 types-pyyaml
