@@ -30,7 +30,7 @@ Installation
 
   pip install tplbuild
 
-`tplbuild` is supported and tested on Python 3.8-3.11
+`tplbuild` is supported and tested on Python 3.11-3.15
 
 When should tplbuild be used?
 -----------------------------
